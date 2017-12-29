@@ -1,5 +1,7 @@
-defmodule Dotfiler.PrinterTest do
+defmodule Dotfiler.PrintTest do
   use ExUnit.Case
+
+  alias Dotfiler.Print
 
   import ExUnit.CaptureIO
 
@@ -19,7 +21,7 @@ defmodule Dotfiler.PrinterTest do
     """
 
     print = fn ->
-      Dotfiler.Printer.help
+      Print.help
     end
 
     assert capture_io(print) == help_message
@@ -27,7 +29,7 @@ defmodule Dotfiler.PrinterTest do
 
   test "prints version" do
     print = fn ->
-      Dotfiler.Printer.version
+      Print.version
     end
 
     assert capture_io(print) == "#{Dotfiler.Mixfile.project[:version]}\n"
