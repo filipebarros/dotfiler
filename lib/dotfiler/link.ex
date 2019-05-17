@@ -21,15 +21,12 @@ defmodule Dotfiler.Link do
     type = type(full_path)
     dotfile_path = dotfile_path(filename)
 
-    message = String.pad_trailing("- #{type}: #{full_path} ", 80, "-")
-    Print.warning_message(message)
+    Print.warning_message("#{type}: #{full_path}", 1)
     case File.ln_s(full_path, dotfile_path) do
       :ok ->
-        message = String.pad_trailing("-- Successfully symlinked #{type} #{dotfile_path} ", 80, "-")
-        Print.success_message(message)
+        Print.success_message("Successfully symlinked #{type} #{dotfile_path}", 2)
       {:error, _} ->
-        message = String.pad_trailing("-- #{type} #{dotfile_path} already exists ", 80, "-")
-        Print.failure_message(message)
+        Print.failure_message("#{type} #{dotfile_path} already exists", 2)
     end
   end
 

@@ -18,16 +18,16 @@ defmodule Dotfiler.Print do
     """)
   end
 
-  def success_message(message) do
-    print_message(message, IO.ANSI.green)
+  def success_message(message, level) do
+    print_message(message, IO.ANSI.green, level)
   end
 
-  def failure_message(message) do
-    print_message(message, IO.ANSI.red)
+  def failure_message(message, level) do
+    print_message(message, IO.ANSI.red, level)
   end
 
-  def warning_message(message) do
-    print_message(message, IO.ANSI.yellow)
+  def warning_message(message, level) do
+    print_message(message, IO.ANSI.yellow, level)
   end
 
   @version Mix.Project.config[:version]
@@ -35,8 +35,16 @@ defmodule Dotfiler.Print do
     print_message(@version)
   end
 
-  defp print_message(message, color) do
-    IO.puts("#{color}#{message}#{IO.ANSI.default_color}")
+  defp print_message(message, color, level) do
+    " #{message} "
+    |> String.pad_leading(String.length(message) + level, "-")
+    |> String.pad_trailing(80, "-")
+    |> colorize(color)
+    |> IO.puts
+  end
+
+  defp colorize(message, color) do
+    "#{color}#{message}#{IO.ANSI.default_color}"
   end
 
   defp print_message(message) do
