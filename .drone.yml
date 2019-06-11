@@ -20,6 +20,15 @@ steps:
   commands:
   - mix test
 
+- name: publish
+  image: plugins/github-release
+  settings:
+    api_key:
+      from_secret: GITHUB_API_KEY
+    files: bin/dotfiler
+  when:
+    event: tag
+
 volumes:
 - name: mix
   temp: {}

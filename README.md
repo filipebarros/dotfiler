@@ -1,5 +1,7 @@
 # Dotfiler
 
+[![Build Status](https://cloud.drone.io/api/badges/filipebarros/dotfiler/status.svg)](https://cloud.drone.io/filipebarros/dotfiler)
+
 ## Generate binary file
 
 ```elixir

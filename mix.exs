@@ -12,7 +12,7 @@ defmodule Dotfiler.Mixfile do
     ]
   end
 
-  def escript, do: [main_module: Dotfiler]
+  def escript, do: [main_module: Dotfiler, path: "bin/dotfiler"]
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
