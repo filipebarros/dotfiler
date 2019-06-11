@@ -1,0 +1,25 @@
+kind: pipeline
+name: default
+
+steps:
+- name: install
+  image: elixir:1.8-alpine
+  volumes:
+  - name: mix
+    path: /root/.mix
+  commands:
+  - mix local.rebar --force
+  - mix local.hex --force
+  - mix deps.get
+
+- name: test
+  image: elixir:1.8-alpine
+  volumes:
+  - name: mix
+    path: /root/.mix
+  commands:
+  - mix test
+
+volumes:
+- name: mix
+  temp: {}
