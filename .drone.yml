@@ -20,6 +20,14 @@ steps:
   commands:
   - mix test
 
+- name: build
+  image: elixir:1.8-alpine
+  volumes:
+  - name: mix
+    path: /root/.mix
+  commands:
+  - mix escript.build
+
 # - name: publish
 #   image: plugins/github-release
 #   settings:
