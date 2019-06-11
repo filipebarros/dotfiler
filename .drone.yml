@@ -1,32 +1,37 @@
+---
 kind: pipeline
 name: default
+
+platform:
+  os: linux
+  arch: amd64
 
 steps:
 - name: install
   image: elixir:1.8-alpine
-  volumes:
-  - name: mix
-    path: /root/.mix
   commands:
   - mix local.rebar --force
   - mix local.hex --force
   - mix deps.get
+  volumes:
+  - name: mix
+    path: /root/.mix
 
 - name: test
   image: elixir:1.8-alpine
+  commands:
+  - mix test
   volumes:
   - name: mix
     path: /root/.mix
-  commands:
-  - mix test
 
 - name: build
   image: elixir:1.8-alpine
+  commands:
+  - mix escript.build
   volumes:
   - name: mix
     path: /root/.mix
-  commands:
-  - mix escript.build
 
 volumes:
 - name: mix
