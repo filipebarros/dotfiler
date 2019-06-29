@@ -32,6 +32,9 @@ steps:
   volumes:
   - name: mix
     path: /root/.mix
+  when:
+    event:
+    - tag
 
 volumes:
 - name: mix
