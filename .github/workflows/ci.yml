@@ -3,11 +3,9 @@ name: CI
 on:
   push:
     branches: [ master ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
-  create:
-    tags:
-      - '*'
 
 jobs:
   test:
@@ -15,7 +13,7 @@ jobs:
     
     strategy:
       matrix:
-        elixir: ['1.19']
+        elixir: ['1.18']
         otp: ['27']
     
     container:
