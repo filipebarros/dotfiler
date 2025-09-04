@@ -1,4 +1,11 @@
 defmodule Dotfiler.CLI do
+  @moduledoc """
+  Command-line interface for Dotfiler.
+
+  Handles argument parsing, validation, and orchestrates the main workflow
+  including dry-run mode, source directory validation, and restoration of backups.
+  """
+
   alias Dotfiler.{Brew, Link, Print}
 
   def parse(args \\ []) do

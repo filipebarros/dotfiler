@@ -1,4 +1,12 @@
 defmodule Dotfiler.Link do
+  @moduledoc """
+  Core dotfile symlinking functionality with backup and restore capabilities.
+
+  Manages the creation of symbolic links from source files to home directory
+  dotfiles, with automatic backup of existing files, comprehensive restore
+  functionality, and support for dry-run mode to preview changes.
+  """
+
   alias Dotfiler.Print
 
   def from_source(source \\ "", opts \\ []) do
@@ -128,24 +136,33 @@ defmodule Dotfiler.Link do
   defp restore_backup_entry(log_entry) do
     case String.split(log_entry, " | ") do
       [_timestamp, filename, original_path, backup_path] ->
-        if File.exists?(backup_path) do
-          # Remove symlink if it exists
-          if File.exists?(original_path) do
-            File.rm(original_path)
-          end
-
-          # Restore original file
-          case File.rename(backup_path, original_path) do
-            :ok ->
-              Print.success_message("Restored #{filename} to #{original_path}", 2)
-
-            {:error, reason} ->
-              Print.failure_message("Failed to restore #{filename}: #{reason}", 2)
-          end
-        end
+        restore_file_if_backup_exists(filename, original_path, backup_path)
 
       _ ->
         Print.warning_message("Invalid backup log entry: #{log_entry}", 2)
+    end
+  end
+
+  defp restore_file_if_backup_exists(filename, original_path, backup_path) do
+    if File.exists?(backup_path) do
+      remove_existing_symlink(original_path)
+      restore_original_file(filename, original_path, backup_path)
+    end
+  end
+
+  defp remove_existing_symlink(original_path) do
+    if File.exists?(original_path) do
+      File.rm(original_path)
+    end
+  end
+
+  defp restore_original_file(filename, original_path, backup_path) do
+    case File.rename(backup_path, original_path) do
+      :ok ->
+        Print.success_message("Restored #{filename} to #{original_path}", 2)
+
+      {:error, reason} ->
+        Print.failure_message("Failed to restore #{filename}: #{reason}", 2)
     end
   end
 
