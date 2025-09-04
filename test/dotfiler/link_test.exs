@@ -36,7 +36,7 @@ defmodule Dotfiler.LinkTest do
 
   describe "from_source/2" do
     test "handles non-existent source directory" do
-      assert_raise SystemExit, fn ->
+      assert_raise RuntimeError, "Link operation failed", fn ->
         capture_io(fn ->
           Link.from_source("/non/existent/path")
         end)

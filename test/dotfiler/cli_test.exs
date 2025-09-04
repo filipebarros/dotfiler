@@ -12,8 +12,18 @@ defmodule Dotfiler.CLITest do
     File.mkdir_p!(@source_dir)
     File.write!("#{@source_dir}/bashrc", "# test bashrc")
 
+    # Mock System.user_home to use test directory
+    original_user_home = System.get_env("HOME")
+    System.put_env("HOME", @source_dir)
+
     on_exit(fn ->
       File.rm_rf(@tmp_dir)
+
+      if original_user_home do
+        System.put_env("HOME", original_user_home)
+      else
+        System.delete_env("HOME")
+      end
     end)
 
     :ok
@@ -59,7 +69,7 @@ defmodule Dotfiler.CLITest do
     end
 
     test "validates source directory exists" do
-      assert_raise SystemExit, fn ->
+      assert_raise RuntimeError, "CLI validation failed", fn ->
         capture_io(fn ->
           CLI.parse(["--source", "/non/existent/path"])
         end)
@@ -70,7 +80,7 @@ defmodule Dotfiler.CLITest do
       file_path = "#{@tmp_dir}/not_a_dir"
       File.write!(file_path, "content")
 
-      assert_raise SystemExit, fn ->
+      assert_raise RuntimeError, "CLI validation failed", fn ->
         capture_io(fn ->
           CLI.parse(["--source", file_path])
         end)

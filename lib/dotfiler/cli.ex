@@ -41,20 +41,32 @@ defmodule Dotfiler.CLI do
     end
 
     # Validate source directory
-    unless File.exists?(source) do
-      Print.failure_message("Source directory '#{source}' does not exist", 1)
-      System.halt(1)
-    end
-
-    unless File.dir?(source) do
-      Print.failure_message("'#{source}' is not a directory", 1)
-      System.halt(1)
-    end
+    validate_source_directory!(source)
 
     if brew do
       Brew.bundle(source, dry_run)
     end
 
     Link.from_source(source, dry_run: dry_run)
+  end
+
+  defp validate_source_directory!(source) do
+    unless File.exists?(source) do
+      Print.failure_message("Source directory '#{source}' does not exist", 1)
+      exit_with_error()
+    end
+
+    unless File.dir?(source) do
+      Print.failure_message("'#{source}' is not a directory", 1)
+      exit_with_error()
+    end
+  end
+
+  defp exit_with_error do
+    if Mix.env() == :test do
+      raise "CLI validation failed"
+    else
+      System.halt(1)
+    end
   end
 end

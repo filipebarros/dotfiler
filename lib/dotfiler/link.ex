@@ -12,15 +12,15 @@ defmodule Dotfiler.Link do
 
       {:error, :enoent} ->
         Print.failure_message("Source directory '#{source}' does not exist", 1)
-        System.halt(1)
+        exit_with_error()
 
       {:error, :eacces} ->
         Print.failure_message("Permission denied accessing '#{source}'", 1)
-        System.halt(1)
+        exit_with_error()
 
       {:error, reason} ->
         Print.failure_message("Error reading source directory: #{reason}", 1)
-        System.halt(1)
+        exit_with_error()
     end
   end
 
@@ -69,7 +69,7 @@ defmodule Dotfiler.Link do
   end
 
   defp dotfile_path(filename) do
-    file_path(System.user_home(), ".#{filename}")
+    file_path(user_home(), ".#{filename}")
   end
 
   defp type(filepath) do
@@ -96,7 +96,7 @@ defmodule Dotfiler.Link do
   end
 
   defp backup_directory do
-    Path.join(System.user_home(), ".dotfiler_backup")
+    Path.join(user_home(), ".dotfiler_backup")
   end
 
   defp log_backup(filename, original_path, backup_path) do
@@ -146,6 +146,19 @@ defmodule Dotfiler.Link do
 
       _ ->
         Print.warning_message("Invalid backup log entry: #{log_entry}", 2)
+    end
+  end
+
+  defp user_home do
+    # Use environment variable in tests for better testability
+    System.get_env("HOME") || System.user_home()
+  end
+
+  defp exit_with_error do
+    if Mix.env() == :test do
+      raise "Link operation failed"
+    else
+      System.halt(1)
     end
   end
 end
