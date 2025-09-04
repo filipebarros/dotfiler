@@ -41,12 +41,20 @@ defmodule Dotfiler.Brew do
   defp execute_brew_bundle(brewfile_path, source) do
     Print.warning_message("Installing Homebrew packages from #{brewfile_path}", 1)
 
-    case System.cmd("brew", ["bundle"], cd: source) do
-      {_output, 0} ->
-        Print.success_message("Successfully installed Homebrew packages", 2)
+    try do
+      case System.cmd("brew", ["bundle"], cd: source) do
+        {_output, 0} ->
+          Print.success_message("Successfully installed Homebrew packages", 2)
 
-      {output, exit_code} ->
-        handle_brew_error(output, exit_code)
+        {output, exit_code} ->
+          handle_brew_error(output, exit_code)
+      end
+    rescue
+      ErlangError ->
+        Print.failure_message(
+          "Homebrew (brew) command not found. Please install Homebrew first.",
+          2
+        )
     end
   end
 
