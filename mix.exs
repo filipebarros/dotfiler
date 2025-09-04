@@ -17,7 +17,8 @@ defmodule Dotfiler.Mixfile do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:meck, "~> 0.9.2", only: :test}
     ]
   end
 end

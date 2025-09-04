@@ -299,4 +299,219 @@ defmodule Dotfiler.LinkTest do
       assert output =~ "Restore completed"
     end
   end
+
+  describe "error handling" do
+    test "handles permission denied when accessing source directory" do
+      # Create a directory and then remove read permissions
+      restricted_dir = "#{@tmp_dir}/restricted"
+      File.mkdir_p!(restricted_dir)
+
+      # We can't actually remove permissions in tests reliably across platforms,
+      # so we'll mock the File.ls function to return :eacces error
+
+      # Mock File.ls to return permission denied error
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :ls, fn ^restricted_dir -> {:error, :eacces} end)
+
+      try do
+        assert_raise RuntimeError, "Link operation failed", fn ->
+          capture_io(fn ->
+            Link.from_source(restricted_dir)
+          end)
+        end
+      after
+        :meck.unload(File)
+      end
+    end
+
+    test "handles generic error when reading source directory" do
+      # Mock File.ls to return a generic error
+      source_dir = "#{@tmp_dir}/generic_error"
+
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :ls, fn ^source_dir -> {:error, :einval} end)
+
+      try do
+        assert_raise RuntimeError, "Link operation failed", fn ->
+          capture_io(fn ->
+            Link.from_source(source_dir)
+          end)
+        end
+      after
+        :meck.unload(File)
+      end
+    end
+
+    test "handles symlink creation failure with :eexist error" do
+      # Setup test files
+      File.write!("#{@tmp_dir}/testfile", "content")
+      File.write!("#{@home_dir}/.testfile", "existing content")
+
+      # Mock File.ln_s to return :eexist error
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :ln_s, fn _, _ -> {:error, :eexist} end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Link.create(@tmp_dir, "testfile")
+          end)
+
+        assert output =~ "already exists (backup failed?)"
+      after
+        :meck.unload(File)
+      end
+    end
+
+    test "handles symlink creation failure with generic error" do
+      # Setup test files
+      File.write!("#{@tmp_dir}/testfile", "content")
+
+      # Mock File.ln_s to return a generic error
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :ln_s, fn _, _ -> {:error, :eperm} end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Link.create(@tmp_dir, "testfile")
+          end)
+
+        assert output =~ "Failed to symlink File"
+        assert output =~ "eperm"
+      after
+        :meck.unload(File)
+      end
+    end
+
+    test "handles backup failure during file creation" do
+      # Setup existing file
+      File.write!("#{@home_dir}/.testfile", "existing")
+      File.write!("#{@tmp_dir}/testfile", "new content")
+
+      # Mock File.rename to fail during backup
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :rename, fn _, _ -> {:error, :eacces} end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Link.create(@tmp_dir, "testfile")
+          end)
+
+        assert output =~ "Failed to backup"
+        assert output =~ "eacces"
+      after
+        :meck.unload(File)
+      end
+    end
+
+    test "handles restore failure during backup restoration" do
+      # Setup backup scenario
+      File.mkdir_p!(@backup_dir)
+      File.write!("#{@backup_dir}/testfile", "backup content")
+
+      log_entry =
+        "2025-01-01T00:00:00Z | testfile | #{@home_dir}/.testfile | #{@backup_dir}/testfile\n"
+
+      File.write!("#{@backup_dir}/backup.log", log_entry)
+
+      # Mock File.rename to fail during restore
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :rename, fn _, _ -> {:error, :eacces} end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Link.restore_backups()
+          end)
+
+        assert output =~ "Failed to restore testfile"
+        assert output =~ "eacces"
+      after
+        :meck.unload(File)
+      end
+    end
+
+    test "handles invalid backup log entries" do
+      File.mkdir_p!(@backup_dir)
+
+      # Create invalid log entries
+      invalid_log = """
+      invalid entry
+      incomplete | entry
+      """
+
+      File.write!("#{@backup_dir}/backup.log", invalid_log)
+
+      output =
+        capture_io(fn ->
+          Link.restore_backups()
+        end)
+
+      assert output =~ "Invalid backup log entry: invalid entry"
+      assert output =~ "Invalid backup log entry: incomplete | entry"
+      assert output =~ "Restore completed"
+    end
+  end
+
+  describe "additional edge cases" do
+    test "filter_files handles edge cases correctly" do
+      # Test the private filter_files function indirectly by creating files that should be filtered
+
+      # Files that should be filtered out (start with . or uppercase)
+      File.write!("#{@tmp_dir}/.hidden", "hidden")
+      File.write!("#{@tmp_dir}/README", "readme")
+      File.write!("#{@tmp_dir}/Makefile", "makefile")
+
+      # Files that should be included
+      File.write!("#{@tmp_dir}/vimrc", "vim config")
+      File.write!("#{@tmp_dir}/bashrc", "bash config")
+
+      output =
+        capture_io(fn ->
+          Link.from_source(@tmp_dir, dry_run: true)
+        end)
+
+      # Should not process hidden files or uppercase files
+      refute output =~ ".hidden"
+      refute output =~ "README"
+      refute output =~ "Makefile"
+
+      # Should process lowercase files
+      assert output =~ "vimrc"
+      assert output =~ "bashrc"
+    end
+
+    test "handles empty source directory" do
+      empty_dir = "#{@tmp_dir}/empty"
+      File.mkdir_p!(empty_dir)
+
+      output =
+        capture_io(fn ->
+          Link.from_source(empty_dir, dry_run: true)
+        end)
+
+      # Should complete without errors even with empty directory
+      refute output =~ "error"
+      refute output =~ "failed"
+    end
+
+    test "handles source directory with only filtered files" do
+      filtered_dir = "#{@tmp_dir}/filtered"
+      File.mkdir_p!(filtered_dir)
+
+      # Only create files that should be filtered out
+      File.write!("#{filtered_dir}/.hidden", "hidden")
+      File.write!("#{filtered_dir}/README", "readme")
+
+      output =
+        capture_io(fn ->
+          Link.from_source(filtered_dir, dry_run: true)
+        end)
+
+      # Should complete without processing any files
+      refute output =~ "Would symlink"
+    end
+  end
 end
