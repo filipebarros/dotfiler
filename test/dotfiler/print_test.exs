@@ -11,17 +11,26 @@ defmodule Dotfiler.PrintTest do
     ./dotfiler --source [folder] [options]
 
     Options:
-    --help      Show this help message.
-    --brew      Install Homebrew
-    --packages  Install Homebrew packages (Brewfile)
+    --source, -s     Source directory containing dotfiles (required)
+    --brew, -b       Install Homebrew packages from Brewfile
+    --dry-run, -d    Preview changes without making them
+    --restore, -r    Restore backed up files and remove symlinks
+    --version, -v    Show version information
+    --help, -h       Show this help message
 
     Description:
-    Installs dotfiles
+    Manages dotfiles by creating symlinks from source directory to home directory.
+    Automatically backs up existing files before symlinking.
+
+    Examples:
+    ./dotfiler --source ~/dotfiles --brew
+    ./dotfiler --source ~/dotfiles --dry-run
+    ./dotfiler --restore
 
     """
 
     print = fn ->
-      Print.help
+      Print.help()
     end
 
     assert capture_io(print) == help_message
@@ -29,9 +38,9 @@ defmodule Dotfiler.PrintTest do
 
   test "prints version" do
     print = fn ->
-      Print.version
+      Print.version()
     end
 
-    assert capture_io(print) == "#{Dotfiler.Mixfile.project[:version]}\n"
+    assert capture_io(print) == "#{Dotfiler.Mixfile.project()[:version]}\n"
   end
 end
