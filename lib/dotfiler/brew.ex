@@ -7,10 +7,34 @@ defmodule Dotfiler.Brew do
   proper error handling for missing Brewfiles or brew command failures.
   """
 
-  alias Dotfiler.Print
+  alias Dotfiler.{Config, Print}
 
-  def bundle(source, dry_run \\ false) do
-    brewfile_path = Path.join(source, "Brewfile")
+  @doc """
+  Installs Homebrew packages from a Brewfile in the source directory.
+
+  Looks for a Brewfile in the source directory and runs `brew bundle` to install packages.
+  The Brewfile name can be customized via configuration.
+
+  ## Parameters
+    - `source` - Directory containing the Brewfile
+    - `dry_run` - If true, only preview the operation (default: false)
+    - `config` - Configuration map (default: nil, loads default if needed)
+
+  ## Returns
+    - `:ok` on success or when no Brewfile exists
+
+  ## Examples
+      iex> Dotfiler.Brew.bundle("~/dotfiles")
+      # Installs packages from ~/dotfiles/Brewfile
+
+      iex> Dotfiler.Brew.bundle("~/dotfiles", true)
+      # Previews Brewfile installation
+  """
+  @spec bundle(String.t(), boolean(), map() | nil) :: :ok
+  def bundle(source, dry_run \\ false, config \\ nil) do
+    config = config || Config.load()
+    brewfile_name = Config.get(config, [:packages, :brewfile_name], "Brewfile")
+    brewfile_path = Path.join(source, brewfile_name)
 
     if dry_run do
       handle_dry_run(brewfile_path, source)

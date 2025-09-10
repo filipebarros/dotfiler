@@ -12,7 +12,7 @@ defmodule DotfilerTest do
         end)
 
       assert output =~ "Usage:"
-      assert output =~ "--source"
+      assert output =~ "<source_directory>"
     end
 
     test "calls CLI.parse with empty arguments" do
@@ -41,7 +41,7 @@ defmodule DotfilerTest do
         end)
 
       assert output =~ "Usage:"
-      assert output =~ "--source"
+      assert output =~ "<source_directory>"
     end
   end
 end

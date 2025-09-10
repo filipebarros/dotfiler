@@ -298,6 +298,57 @@ defmodule Dotfiler.LinkTest do
       # Should complete restore successfully
       assert output =~ "Restore completed"
     end
+
+    test "handles backup collision with timestamp" do
+      # Create source file
+      File.write!("#{@source_dir}/bashrc", "# new bashrc")
+
+      # Create existing file in home
+      File.write!("#{@home_dir}/.bashrc", "# existing bashrc")
+
+      # Create existing backup to force collision
+      File.mkdir_p!(@backup_dir)
+      File.write!("#{@backup_dir}/bashrc", "# old backup")
+
+      capture_io(fn ->
+        Link.from_source(@source_dir)
+      end)
+
+      # Check that both backup files exist
+      assert File.exists?("#{@backup_dir}/bashrc")
+
+      # Check for timestamped backup file
+      {:ok, files} = File.ls(@backup_dir)
+      timestamped_files = Enum.filter(files, &String.contains?(&1, "bashrc."))
+      assert length(timestamped_files) == 1
+
+      # Check that symlink was created
+      assert File.lstat!("#{@home_dir}/.bashrc").type == :symlink
+    end
+
+    test "handles backup directory creation failure gracefully" do
+      # Create source file
+      File.write!("#{@source_dir}/testfile", "test content")
+
+      # Create existing file in home
+      File.write!("#{@home_dir}/.testfile", "existing content")
+
+      # Mock File.mkdir_p to fail
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :mkdir_p, fn _ -> {:error, :eacces} end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Link.create(@source_dir, "testfile")
+          end)
+
+        assert output =~ "Failed to create backup directory"
+        assert output =~ "eacces"
+      after
+        :meck.unload(File)
+      end
+    end
   end
 
   describe "error handling" do
@@ -357,7 +408,8 @@ defmodule Dotfiler.LinkTest do
             Link.create(@tmp_dir, "testfile")
           end)
 
-        assert output =~ "already exists (backup failed?)"
+        assert output =~ "already exists"
+        assert output =~ "backup may have failed"
       after
         :meck.unload(File)
       end
@@ -377,8 +429,9 @@ defmodule Dotfiler.LinkTest do
             Link.create(@tmp_dir, "testfile")
           end)
 
-        assert output =~ "Failed to symlink File"
+        assert output =~ "Failed to create symlink"
         assert output =~ "eperm"
+        assert output =~ "Check permissions"
       after
         :meck.unload(File)
       end
@@ -481,6 +534,62 @@ defmodule Dotfiler.LinkTest do
       # Should process lowercase files
       assert output =~ "vimrc"
       assert output =~ "bashrc"
+    end
+
+    test "filter_files handles unicode and special characters" do
+      # Create a clean test directory for this specific test
+      unicode_test_dir = "#{@tmp_dir}/unicode_test"
+      File.mkdir_p!(unicode_test_dir)
+
+      # Test filtering with unicode and special characters
+      File.write!("#{unicode_test_dir}/café", "unicode file")
+      File.write!("#{unicode_test_dir}/file-with-dashes", "dashed file")
+      File.write!("#{unicode_test_dir}/file_with_underscores", "underscore file")
+      File.write!("#{unicode_test_dir}/file123", "numbered file")
+      File.write!("#{unicode_test_dir}/123file", "starts with number")
+      File.write!("#{unicode_test_dir}/ASCII_UPPER", "ASCII uppercase")
+      File.write!("#{unicode_test_dir}/ÁLLO", "unicode uppercase")
+
+      output =
+        capture_io(fn ->
+          Link.from_source(unicode_test_dir, dry_run: true)
+        end)
+
+      # Should process lowercase files with unicode and special chars
+      assert output =~ "café"
+      assert output =~ "file-with-dashes"
+      assert output =~ "file_with_underscores"
+      assert output =~ "file123"
+      assert output =~ "123file"
+
+      # Should filter out ASCII uppercase files
+      refute output =~ "ASCII_UPPER"
+
+      # Unicode uppercase should pass through (only ASCII A-Z filtered)
+      assert output =~ "ÁLLO"
+    end
+
+    test "filter_files handles empty string edge case" do
+      # Create a scenario where File.ls might return empty strings (shouldn't happen normally)
+      # We'll mock File.ls to test this edge case
+      empty_test_dir = "#{@tmp_dir}/empty_test"
+      File.mkdir_p!(empty_test_dir)
+
+      :meck.new(File, [:passthrough])
+      :meck.expect(File, :ls, fn ^empty_test_dir -> {:ok, ["", ".hidden"]} end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Link.from_source(empty_test_dir, dry_run: true)
+          end)
+
+        # Should not process empty string or hidden files - no output expected
+        refute String.contains?(output, "Would symlink")
+        refute output =~ ".hidden"
+      after
+        :meck.unload(File)
+      end
     end
 
     test "handles empty source directory" do

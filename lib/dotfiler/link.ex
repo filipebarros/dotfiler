@@ -7,40 +7,87 @@ defmodule Dotfiler.Link do
   functionality, and support for dry-run mode to preview changes.
   """
 
-  alias Dotfiler.Print
+  alias Dotfiler.{Config, ExitHandler, Filter, Print}
 
+  @type link_options :: [dry_run: boolean(), config: map()]
+
+  @doc """
+  Creates symbolic links from all files in the source directory to the home directory.
+
+  Files are filtered based on configuration and linked to `~/.filename`.
+  Existing files are automatically backed up before creating symlinks.
+
+  ## Parameters
+    - `source` - Path to the source directory containing dotfiles
+    - `opts` - Keyword list of options:
+      - `:dry_run` - If true, only preview changes without making them (default: false)
+      - `:config` - Configuration map (default: loads from Config.load())
+
+  ## Returns
+    - `:ok` on success
+    - Raises or halts on error
+
+  ## Examples
+      iex> Dotfiler.Link.from_source("~/dotfiles")
+      # Creates symlinks for all dotfiles
+
+      iex> Dotfiler.Link.from_source("~/dotfiles", dry_run: true)
+      # Previews changes without making them
+  """
+  @spec from_source(String.t(), link_options()) :: :ok | no_return()
   def from_source(source \\ "", opts \\ []) do
     dry_run = Keyword.get(opts, :dry_run, false)
+    config = Keyword.get(opts, :config, Config.load())
 
     case File.ls(source) do
       {:ok, files} ->
+        filter = Filter.new(config, source)
+
         files
-        |> Enum.filter(&filter_files(&1))
-        |> Enum.each(&create(source, &1, dry_run))
+        |> Enum.filter(&Filter.should_process?(filter, &1))
+        |> Enum.each(&create(source, &1, dry_run, config))
 
       {:error, :enoent} ->
-        Print.failure_message("Source directory '#{source}' does not exist", 1)
-        exit_with_error()
+        Print.failure_message(
+          "Source directory '#{source}' does not exist. Please check the path and try again.",
+          1
+        )
+
+        ExitHandler.exit_with_error("Link operation failed")
 
       {:error, :eacces} ->
-        Print.failure_message("Permission denied accessing '#{source}'", 1)
-        exit_with_error()
+        Print.failure_message(
+          "Permission denied accessing '#{source}'. Please check file permissions.",
+          1
+        )
+
+        ExitHandler.exit_with_error("Link operation failed")
 
       {:error, reason} ->
-        Print.failure_message("Error reading source directory: #{reason}", 1)
-        exit_with_error()
+        Print.failure_message(
+          "Error reading source directory '#{source}': #{reason}. Please verify the directory is accessible.",
+          1
+        )
+
+        ExitHandler.exit_with_error("Link operation failed")
     end
   end
 
-  defp filter_files(filename) do
-    cond do
-      String.first(filename) == "." -> false
-      String.first(filename) == String.first(filename) |> String.upcase() -> false
-      true -> true
-    end
-  end
+  @doc """
+  Creates a symbolic link for a single file from source to home directory.
 
-  def create(source, filename, dry_run \\ false) do
+  ## Parameters
+    - `source` - Source directory path
+    - `filename` - Name of the file to link
+    - `dry_run` - If true, only preview the operation (default: false)
+    - `config` - Configuration map (default: nil, loads default if needed)
+
+  ## Returns
+    - `:ok` on success or dry-run completion
+  """
+  @spec create(String.t(), String.t(), boolean(), map() | nil) :: :ok
+  def create(source, filename, dry_run \\ false, config \\ nil) do
+    config = config || Config.load()
     full_path = file_path(source, filename)
     type = type(full_path)
     dotfile_path = dotfile_path(filename)
@@ -56,7 +103,7 @@ defmodule Dotfiler.Link do
 
       # Create backup if file/directory exists
       if File.exists?(dotfile_path) do
-        backup_existing(dotfile_path, filename)
+        backup_existing(dotfile_path, filename, config)
       end
 
       case File.ln_s(full_path, dotfile_path) do
@@ -64,10 +111,16 @@ defmodule Dotfiler.Link do
           Print.success_message("Successfully symlinked #{type} #{dotfile_path}", 2)
 
         {:error, :eexist} ->
-          Print.failure_message("#{type} #{dotfile_path} already exists (backup failed?)", 2)
+          Print.failure_message(
+            "#{type} #{dotfile_path} already exists. The backup may have failed. Please check manually.",
+            2
+          )
 
         {:error, reason} ->
-          Print.failure_message("Failed to symlink #{type} #{dotfile_path}: #{reason}", 2)
+          Print.failure_message(
+            "Failed to create symlink for #{type} #{dotfile_path}: #{reason}. Check permissions and available space.",
+            2
+          )
       end
     end
   end
@@ -87,36 +140,77 @@ defmodule Dotfiler.Link do
     end
   end
 
-  defp backup_existing(dotfile_path, filename) do
-    backup_dir = backup_directory()
-    File.mkdir_p!(backup_dir)
+  defp backup_existing(dotfile_path, filename, config) do
+    backup_dir = backup_directory(config)
 
-    backup_path = Path.join(backup_dir, filename)
-
-    case File.rename(dotfile_path, backup_path) do
+    case File.mkdir_p(backup_dir) do
       :ok ->
-        Print.success_message("Backed up existing file to #{backup_path}", 2)
-        log_backup(filename, dotfile_path, backup_path)
+        backup_path = get_unique_backup_path(backup_dir, filename)
+
+        case File.rename(dotfile_path, backup_path) do
+          :ok ->
+            Print.success_message("Backed up existing file to #{backup_path}", 2)
+            log_backup(filename, dotfile_path, backup_path, config)
+
+          {:error, reason} ->
+            Print.failure_message("Failed to backup #{dotfile_path}: #{reason}", 2)
+        end
 
       {:error, reason} ->
-        Print.failure_message("Failed to backup #{dotfile_path}: #{reason}", 2)
+        Print.failure_message("Failed to create backup directory #{backup_dir}: #{reason}", 2)
     end
   end
 
-  defp backup_directory do
-    Path.join(user_home(), ".dotfiler_backup")
+  defp get_unique_backup_path(backup_dir, filename) do
+    base_path = Path.join(backup_dir, filename)
+
+    if File.exists?(base_path) do
+      timestamp = DateTime.utc_now() |> DateTime.to_unix()
+      Path.join(backup_dir, "#{filename}.#{timestamp}")
+    else
+      base_path
+    end
   end
 
-  defp log_backup(filename, original_path, backup_path) do
-    log_file = Path.join(backup_directory(), "backup.log")
+  defp backup_directory(config) do
+    backup_dir = Config.get(config, [:general, :backup_dir], "~/.dotfiler_backup")
+
+    # Handle tilde expansion properly for tests by using user_home()
+    if String.starts_with?(backup_dir, "~/") do
+      Path.join(user_home(), String.slice(backup_dir, 2..-1//1))
+    else
+      Path.expand(backup_dir)
+    end
+  end
+
+  defp log_backup(filename, original_path, backup_path, config) do
+    log_file = Path.join(backup_directory(config), "backup.log")
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
     log_entry = "#{timestamp} | #{filename} | #{original_path} | #{backup_path}\n"
 
     File.write(log_file, log_entry, [:append])
   end
 
-  def restore_backups do
-    backup_dir = backup_directory()
+  @doc """
+  Restores all backed up files from the backup directory.
+
+  Processes the backup log in reverse order, removing symlinks and
+  restoring original files to their original locations.
+
+  ## Parameters
+    - `config` - Configuration map (default: nil, loads default if needed)
+
+  ## Returns
+    - `:ok` on completion
+
+  ## Examples
+      iex> Dotfiler.Link.restore_backups()
+      # Restores all backed up files
+  """
+  @spec restore_backups(map() | nil) :: :ok
+  def restore_backups(config \\ nil) do
+    config = config || Config.load()
+    backup_dir = backup_directory(config)
     log_file = Path.join(backup_dir, "backup.log")
 
     if File.exists?(log_file) do
@@ -169,13 +263,5 @@ defmodule Dotfiler.Link do
   defp user_home do
     # Use environment variable in tests for better testability
     System.get_env("HOME") || System.user_home()
-  end
-
-  defp exit_with_error do
-    if Mix.env() == :test do
-      raise "Link operation failed"
-    else
-      System.halt(1)
-    end
   end
 end

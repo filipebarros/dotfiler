@@ -3,42 +3,51 @@ name: CI
 on:
   push:
     branches: [ master ]
-    tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         elixir: ['1.18']
         otp: ['27']
-    
+
     container:
       image: elixir:${{ matrix.elixir }}-alpine
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Install dependencies
       run: |
         mix local.rebar --force
         mix local.hex --force
         mix deps.get
-    
+
+    - name: Check code formatting
+      run: mix format --check-formatted
+
+    - name: Run Credo
+      run: mix credo --strict
+
+    - name: Compile with warnings as errors
+      run: mix compile --warnings-as-errors
+
     - name: Run tests
       run: mix test
-    
-    - name: Build escript
-      if: startsWith(github.ref, 'refs/tags/')
-      run: mix escript.build
-    
-    - name: Upload binary
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
+
+    - name: Cache PLT files
+      uses: actions/cache@v4
       with:
-        name: dotfiler-binary
-        path: bin/dotfiler
+        path: |
+          _build/*/dialyxir_*
+        key: plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-
+
+    - name: Run Dialyzer
+      run: mix dialyzer --format github

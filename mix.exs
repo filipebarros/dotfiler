@@ -18,7 +18,10 @@ defmodule Dotfiler.Mixfile do
   defp deps do
     [
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:meck, "~> 0.9.2", only: :test}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:meck, "~> 0.9.2", only: :test},
+      {:toml, "~> 0.7"}
     ]
   end
 end
