@@ -1,0 +1,15 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "elixir",
+      "package-name": "dotfiler",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "mix.exs",
+          "glob": false
+        }
+      ]
+    }
+  }
+}

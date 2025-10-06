@@ -37,7 +37,7 @@ defmodule Dotfiler.CLITest do
         end)
 
       assert output =~ "Usage:"
-      assert output =~ "--source"
+      assert output =~ "<source_directory>"
     end
 
     test "shows help with --help flag" do
@@ -68,29 +68,10 @@ defmodule Dotfiler.CLITest do
       assert output =~ "No backup log found"
     end
 
-    test "validates source directory exists" do
-      assert_raise RuntimeError, "CLI validation failed", fn ->
-        capture_io(fn ->
-          CLI.parse(["--source", "/non/existent/path"])
-        end)
-      end
-    end
-
-    test "validates source is a directory" do
-      file_path = "#{@tmp_dir}/not_a_dir"
-      File.write!(file_path, "content")
-
-      assert_raise RuntimeError, "CLI validation failed", fn ->
-        capture_io(fn ->
-          CLI.parse(["--source", file_path])
-        end)
-      end
-    end
-
     test "handles dry run mode" do
       output =
         capture_io(fn ->
-          CLI.parse(["--source", @source_dir, "--dry-run"])
+          CLI.parse([@source_dir, "--dry-run"])
         end)
 
       assert output =~ "DRY RUN MODE"
@@ -102,7 +83,7 @@ defmodule Dotfiler.CLITest do
 
       output =
         capture_io(fn ->
-          CLI.parse(["--source", @source_dir, "--brew", "--dry-run"])
+          CLI.parse([@source_dir, "--brew", "--dry-run"])
         end)
 
       assert output =~ "DRY RUN MODE"
@@ -115,7 +96,7 @@ defmodule Dotfiler.CLITest do
 
       output =
         capture_io(fn ->
-          CLI.parse(["--source", @source_dir, "--brew"])
+          CLI.parse([@source_dir, "--brew"])
         end)
 
       # Should attempt to install Homebrew packages and link files
@@ -129,7 +110,7 @@ defmodule Dotfiler.CLITest do
         end)
 
       assert output =~ "Usage:"
-      assert output =~ "--source"
+      assert output =~ "<source_directory>"
     end
 
     test "handles version short flag" do
@@ -148,17 +129,6 @@ defmodule Dotfiler.CLITest do
         end)
 
       assert output =~ "No backup log found"
-    end
-
-    test "handles source short flag" do
-      output =
-        capture_io(fn ->
-          CLI.parse(["-s", @source_dir])
-        end)
-
-      # Should process the source directory
-      # May have various outputs
-      assert output =~ "bashrc" or output =~ "DRY RUN" or true
     end
   end
 
@@ -298,17 +268,16 @@ defmodule Dotfiler.CLITest do
       assert output =~ "No backup log found"
     end
 
-    test "source option takes precedence over help when both provided" do
+    test "help takes precedence when both positional arg and help provided" do
       # Create a valid source directory
       File.mkdir_p!(@tmp_dir)
 
       output =
         capture_io(fn ->
-          CLI.parse(["--source", @tmp_dir, "--help"])
+          CLI.parse([@tmp_dir, "--help"])
         end)
 
-      # Actually, in the current implementation, help takes precedence based on the cond structure
-      # This test should verify the actual behavior, not the expected behavior
+      # Help should take precedence
       assert output =~ "Usage:"
     end
 
@@ -318,7 +287,7 @@ defmodule Dotfiler.CLITest do
 
       output =
         capture_io(fn ->
-          CLI.parse(["-s", @tmp_dir, "-d"])
+          CLI.parse([@tmp_dir, "-d"])
         end)
 
       assert output =~ "DRY RUN MODE"
@@ -331,11 +300,168 @@ defmodule Dotfiler.CLITest do
 
       output =
         capture_io(fn ->
-          CLI.parse(["-s", @tmp_dir, "-b", "-d"])
+          CLI.parse([@tmp_dir, "-b", "-d"])
         end)
 
       assert output =~ "DRY RUN MODE"
       assert output =~ "No Brewfile found"
+    end
+
+    test "help takes precedence over positional argument when both provided" do
+      output =
+        capture_io(fn ->
+          CLI.parse(["--help", @source_dir])
+        end)
+
+      # Help should take precedence based on the flag order
+      assert output =~ "Usage:"
+      assert output =~ "<source_directory>"
+    end
+
+    test "version takes precedence over positional argument when both provided" do
+      output =
+        capture_io(fn ->
+          CLI.parse(["--version", @source_dir])
+        end)
+
+      # Version should take precedence
+      assert output =~ "0.1.0"
+    end
+
+    test "restore takes precedence over positional argument when both provided" do
+      output =
+        capture_io(fn ->
+          CLI.parse(["--restore", @source_dir])
+        end)
+
+      # Restore should take precedence
+      assert output =~ "No backup log found"
+    end
+  end
+
+  describe "execute function edge cases" do
+    test "execute with all options enabled" do
+      File.write!("#{@source_dir}/Brewfile", "brew 'git'")
+
+      output =
+        capture_io(fn ->
+          CLI.execute(source: @source_dir, brew: true, dry_run: true)
+        end)
+
+      assert output =~ "DRY RUN MODE"
+      assert output =~ "Would install Homebrew packages" or output =~ "No Brewfile found"
+    end
+
+    test "execute with default options" do
+      output =
+        capture_io(fn ->
+          CLI.execute(source: @source_dir)
+        end)
+
+      # Should process files without brew or dry-run
+      assert output =~ "bashrc" or output =~ "File:"
+    end
+
+    test "execute validates source directory before processing" do
+      assert_raise RuntimeError, "CLI validation failed", fn ->
+        capture_io(fn ->
+          CLI.execute(source: "/absolutely/nonexistent/path")
+        end)
+      end
+    end
+  end
+
+  describe "positional argument support" do
+    test "accepts source directory as positional argument" do
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir])
+        end)
+
+      # Should process the source directory
+      assert output =~ "bashrc" or output =~ "File:"
+    end
+
+    test "positional argument with dry-run flag" do
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir, "--dry-run"])
+        end)
+
+      assert output =~ "DRY RUN MODE"
+      assert output =~ "[DRY RUN]"
+    end
+
+    test "positional argument with brew flag" do
+      File.write!("#{@source_dir}/Brewfile", "brew 'git'")
+
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir, "--brew"])
+        end)
+
+      # Should attempt to install Homebrew packages and link files
+      assert output =~ "Installing Homebrew packages" or output =~ "No Brewfile found"
+    end
+
+    test "positional argument with multiple flags" do
+      File.write!("#{@source_dir}/Brewfile", "brew 'git'")
+
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir, "--brew", "--dry-run"])
+        end)
+
+      assert output =~ "DRY RUN MODE"
+      assert output =~ "[DRY RUN]"
+      assert output =~ "Would install Homebrew packages"
+    end
+
+    test "validates positional source directory exists" do
+      assert_raise RuntimeError, "CLI validation failed", fn ->
+        capture_io(fn ->
+          CLI.parse(["/non/existent/positional/path"])
+        end)
+      end
+    end
+
+    test "validates positional source is a directory" do
+      file_path = "#{@tmp_dir}/not_a_dir_positional"
+      File.write!(file_path, "content")
+
+      assert_raise RuntimeError, "CLI validation failed", fn ->
+        capture_io(fn ->
+          CLI.parse([file_path])
+        end)
+      end
+    end
+
+    test "help flag takes precedence over positional argument" do
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir, "--help"])
+        end)
+
+      assert output =~ "Usage:"
+      assert output =~ "<source_directory>"
+    end
+
+    test "version flag takes precedence over positional argument" do
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir, "--version"])
+        end)
+
+      assert output =~ "0.1.0"
+    end
+
+    test "restore flag takes precedence over positional argument" do
+      output =
+        capture_io(fn ->
+          CLI.parse([@source_dir, "--restore"])
+        end)
+
+      assert output =~ "No backup log found"
     end
   end
 end

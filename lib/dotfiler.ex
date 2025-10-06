@@ -7,6 +7,19 @@ defmodule Dotfiler do
   automatic backups, dry-run preview, and complete restore functionality.
   """
 
+  @doc """
+  Main entry point for the escript.
+
+  Parses command-line arguments and executes the appropriate action.
+
+  ## Parameters
+    - `args` - List of command-line arguments (defaults to empty list)
+
+  ## Examples
+      iex> Dotfiler.main(["--help"])
+      # Displays help message
+  """
+  @spec main([String.t()]) :: :ok | no_return()
   def main(args \\ []) do
     Dotfiler.CLI.parse(args)
   end

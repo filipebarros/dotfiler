@@ -8,23 +8,33 @@ defmodule Dotfiler.PrintTest do
   test "prints help menu" do
     help_message = """
     Usage:
-    ./dotfiler --source [folder] [options]
+    ./dotfiler <source_directory> [options]
+
+    Arguments:
+    <source_directory>   Directory containing dotfiles to symlink
 
     Options:
-    --source, -s     Source directory containing dotfiles (required)
-    --brew, -b       Install Homebrew packages from Brewfile
-    --dry-run, -d    Preview changes without making them
-    --restore, -r    Restore backed up files and remove symlinks
-    --version, -v    Show version information
-    --help, -h       Show this help message
+    --brew, -b           Install Homebrew packages from Brewfile
+    --dry-run, -d        Preview changes without making them
+    --restore, -r        Restore backed up files and remove symlinks
+    --config, -c         Use custom configuration file
+    --version, -v        Show version information
+    --help, -h           Show this help message
 
     Description:
     Manages dotfiles by creating symlinks from source directory to home directory.
     Automatically backs up existing files before symlinking.
 
+    Configuration files are loaded from (in priority order):
+    1. --config flag path
+    2. ./.dotfilerrc
+    3. ~/.dotfilerrc
+    4. ~/.config/dotfiler/config.toml
+
     Examples:
-    ./dotfiler --source ~/dotfiles --brew
-    ./dotfiler --source ~/dotfiles --dry-run
+    ./dotfiler ~/dotfiles --brew
+    ./dotfiler ~/dotfiles --dry-run
+    ./dotfiler ~/dotfiles --config my-config.toml
     ./dotfiler --restore
 
     """
