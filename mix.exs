@@ -21,7 +21,7 @@ defmodule Dotfiler.Mixfile do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:meck, "~> 0.9.2", only: :test},
-      {:toml, "~> 0.7"}
+      {:toml_elixir, "~> 2.0"}
     ]
   end
 end

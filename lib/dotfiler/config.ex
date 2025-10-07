@@ -140,7 +140,7 @@ defmodule Dotfiler.Config do
   defp load_config_file(path) do
     case File.read(path) do
       {:ok, content} ->
-        case Toml.decode(content) do
+        case TomlElixir.parse(content) do
           {:ok, parsed_config} ->
             merge_configs(@default_config, normalize_config(parsed_config))
 

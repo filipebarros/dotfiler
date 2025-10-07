@@ -4,6 +4,8 @@ defmodule DotfilerTest do
 
   alias Dotfiler
 
+  @version Mix.Project.config()[:version]
+
   describe "main/1" do
     test "calls CLI.parse with provided arguments" do
       output =
@@ -31,7 +33,7 @@ defmodule DotfilerTest do
           Dotfiler.main(["--version"])
         end)
 
-      assert output =~ "0.1.0"
+      assert output =~ @version
     end
 
     test "defaults to empty arguments when none provided" do
