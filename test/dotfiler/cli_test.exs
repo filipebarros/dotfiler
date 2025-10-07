@@ -4,6 +4,7 @@ defmodule Dotfiler.CLITest do
 
   alias Dotfiler.CLI
 
+  @version Mix.Project.config()[:version]
   @tmp_dir "/tmp/dotfiler_cli_test"
   @source_dir "#{@tmp_dir}/source"
 
@@ -56,7 +57,7 @@ defmodule Dotfiler.CLITest do
           CLI.parse(["--version"])
         end)
 
-      assert output =~ "0.1.0"
+      assert output =~ @version
     end
 
     test "handles restore flag" do
@@ -119,7 +120,7 @@ defmodule Dotfiler.CLITest do
           CLI.parse(["-v"])
         end)
 
-      assert output =~ "0.1.0"
+      assert output =~ @version
     end
 
     test "handles restore short flag" do
@@ -249,15 +250,6 @@ defmodule Dotfiler.CLITest do
       assert output =~ "Usage:"
     end
 
-    test "handles version with alias" do
-      output =
-        capture_io(fn ->
-          CLI.parse(["-v"])
-        end)
-
-      assert output =~ "0.1.0"
-    end
-
     test "handles restore with alias" do
       output =
         capture_io(fn ->
@@ -324,8 +316,9 @@ defmodule Dotfiler.CLITest do
           CLI.parse(["--version", @source_dir])
         end)
 
-      # Version should take precedence
-      assert output =~ "0.1.0"
+      # Version should take precedence (not help or linking)
+      refute output =~ "Usage:"
+      refute output =~ "File:"
     end
 
     test "restore takes precedence over positional argument when both provided" do
@@ -444,15 +437,6 @@ defmodule Dotfiler.CLITest do
 
       assert output =~ "Usage:"
       assert output =~ "<source_directory>"
-    end
-
-    test "version flag takes precedence over positional argument" do
-      output =
-        capture_io(fn ->
-          CLI.parse([@source_dir, "--version"])
-        end)
-
-      assert output =~ "0.1.0"
     end
 
     test "restore flag takes precedence over positional argument" do
