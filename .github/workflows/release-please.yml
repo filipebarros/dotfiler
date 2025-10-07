@@ -12,38 +12,51 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           release-type: elixir
 
-      # Build and upload the escript when a release is created
+  build-binaries:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
       - name: Checkout code
-        if: ${{ steps.release.outputs.release_created }}
         uses: actions/checkout@v4
 
       - name: Set up Elixir
-        if: ${{ steps.release.outputs.release_created }}
         uses: erlef/setup-beam@v1
         with:
           elixir-version: '1.18'
           otp-version: '27'
 
       - name: Install dependencies
-        if: ${{ steps.release.outputs.release_created }}
         run: |
           mix local.rebar --force
           mix local.hex --force
           mix deps.get
 
       - name: Build escript
-        if: ${{ steps.release.outputs.release_created }}
         run: mix escript.build
 
+      - name: Rename binary with platform suffix
+        run: mv bin/dotfiler bin/dotfiler-${{ matrix.platform }}
+
       - name: Upload binary to release
-        if: ${{ steps.release.outputs.release_created }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ steps.release.outputs.tag_name }} bin/dotfiler
+          gh release upload ${{ needs.release-please.outputs.tag_name }} bin/dotfiler-${{ matrix.platform }}
