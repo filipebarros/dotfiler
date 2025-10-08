@@ -26,6 +26,7 @@ defmodule Dotfiler.Print do
     --brew, -b           Install Homebrew packages from Brewfile
     --dry-run, -d        Preview changes without making them
     --restore, -r        Restore backed up files and remove symlinks
+    --list, -l           List all currently managed symlinks with status
     --config, -c         Use custom configuration file
     --version, -v        Show version information
     --help, -h           Show this help message
@@ -44,6 +45,7 @@ defmodule Dotfiler.Print do
     ./dotfiler ~/dotfiles --brew
     ./dotfiler ~/dotfiles --dry-run
     ./dotfiler ~/dotfiles --config my-config.toml
+    ./dotfiler --list
     ./dotfiler --restore
     """)
   end

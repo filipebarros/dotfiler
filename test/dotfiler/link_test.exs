@@ -165,6 +165,176 @@ defmodule Dotfiler.LinkTest do
     end
   end
 
+  describe "list_symlinks/1" do
+    test "displays managed symlinks with valid status" do
+      # Create backup scenario with valid symlinks
+      File.mkdir_p!(@backup_dir)
+
+      # Create source file and symlink
+      File.write!("#{@source_dir}/bashrc", "bashrc content")
+      File.ln_s!("#{@source_dir}/bashrc", "#{@home_dir}/.bashrc")
+
+      # Create backup log
+      log_entry = "2025-01-01T00:00:00Z | bashrc | #{@home_dir}/.bashrc | #{@backup_dir}/bashrc\n"
+      File.write!("#{@backup_dir}/backup.log", log_entry)
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      assert output =~ "✓"
+      assert output =~ "#{@home_dir}/.bashrc"
+      assert output =~ "#{@source_dir}/bashrc"
+    end
+
+    test "displays warning for missing symlinks" do
+      # Create backup log without actual symlink
+      File.mkdir_p!(@backup_dir)
+
+      log_entry = "2025-01-01T00:00:00Z | vimrc | #{@home_dir}/.vimrc | #{@backup_dir}/vimrc\n"
+      File.write!("#{@backup_dir}/backup.log", log_entry)
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      assert output =~ "⚠"
+      assert output =~ "#{@home_dir}/.vimrc"
+      assert output =~ "symlink not found"
+    end
+
+    test "displays warning for files that exist but are not symlinks" do
+      # Create backup log and regular file (not symlink)
+      File.mkdir_p!(@backup_dir)
+      File.write!("#{@home_dir}/.gitconfig", "regular file content")
+
+      log_entry =
+        "2025-01-01T00:00:00Z | gitconfig | #{@home_dir}/.gitconfig | #{@backup_dir}/gitconfig\n"
+
+      File.write!("#{@backup_dir}/backup.log", log_entry)
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      assert output =~ "⚠"
+      assert output =~ "#{@home_dir}/.gitconfig"
+      assert output =~ "exists but not a symlink"
+    end
+
+    test "handles multiple entries correctly" do
+      # Create multiple backup scenarios
+      File.mkdir_p!(@backup_dir)
+
+      # Create valid symlink
+      File.write!("#{@source_dir}/bashrc", "bashrc content")
+      File.ln_s!("#{@source_dir}/bashrc", "#{@home_dir}/.bashrc")
+
+      # Create regular file (not symlink)
+      File.write!("#{@home_dir}/.vimrc", "regular file")
+
+      # Create backup log with multiple entries
+      log_entries = """
+      2025-01-01T00:00:00Z | bashrc | #{@home_dir}/.bashrc | #{@backup_dir}/bashrc
+      2025-01-01T00:00:00Z | vimrc | #{@home_dir}/.vimrc | #{@backup_dir}/vimrc
+      2025-01-01T00:00:00Z | gitconfig | #{@home_dir}/.gitconfig | #{@backup_dir}/gitconfig
+      """
+
+      File.write!("#{@backup_dir}/backup.log", String.trim(log_entries))
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      # Valid symlink
+      assert output =~ "✓"
+      assert output =~ "bashrc"
+      # Regular file (not symlink)
+      assert output =~ "⚠"
+      assert output =~ "vimrc"
+      # Missing file
+      assert output =~ "gitconfig"
+    end
+
+    test "handles missing backup log gracefully" do
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "No backup log found"
+      assert output =~ "no dotfiles are currently managed"
+    end
+
+    test "handles empty backup log" do
+      File.mkdir_p!(@backup_dir)
+      File.write!("#{@backup_dir}/backup.log", "")
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      assert output =~ "No dotfiles currently managed"
+    end
+
+    test "handles corrupted log entries gracefully" do
+      File.mkdir_p!(@backup_dir)
+
+      # Mix of corrupted and valid entries
+      corrupted_log = """
+      invalid entry
+      incomplete | entry
+      2025-01-01T00:00:00Z | valid | #{@home_dir}/.valid | #{@backup_dir}/valid
+      """
+
+      File.write!("#{@backup_dir}/backup.log", corrupted_log)
+
+      # Create symlink for valid entry
+      File.write!("#{@source_dir}/valid", "valid content")
+      File.ln_s!("#{@source_dir}/valid", "#{@home_dir}/.valid")
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      assert output =~ "✓"
+      assert output =~ "#{@home_dir}/.valid"
+      # Should only display valid entries, ignoring corrupted ones
+    end
+
+    test "displays broken symlinks correctly" do
+      File.mkdir_p!(@backup_dir)
+
+      # Create broken symlink (pointing to non-existent target)
+      File.ln_s!("/non/existent/path", "#{@home_dir}/.broken")
+
+      log_entry = "2025-01-01T00:00:00Z | broken | #{@home_dir}/.broken | #{@backup_dir}/broken\n"
+      File.write!("#{@backup_dir}/backup.log", log_entry)
+
+      output =
+        capture_io(fn ->
+          Link.list_symlinks()
+        end)
+
+      assert output =~ "Managed Dotfiles"
+      assert output =~ "✓"
+      assert output =~ "#{@home_dir}/.broken"
+      assert output =~ "/non/existent/path"
+    end
+  end
+
   describe "edge cases" do
     test "handles permission errors when creating backups" do
       # Ensure clean state first

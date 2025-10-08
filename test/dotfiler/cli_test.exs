@@ -131,6 +131,24 @@ defmodule Dotfiler.CLITest do
 
       assert output =~ "No backup log found"
     end
+
+    test "handles list flag" do
+      output =
+        capture_io(fn ->
+          CLI.parse(["--list"])
+        end)
+
+      assert output =~ "No backup log found" or output =~ "Managed Dotfiles"
+    end
+
+    test "handles list short flag" do
+      output =
+        capture_io(fn ->
+          CLI.parse(["-l"])
+        end)
+
+      assert output =~ "No backup log found" or output =~ "Managed Dotfiles"
+    end
   end
 
   describe "private functions" do
