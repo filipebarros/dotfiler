@@ -192,6 +192,89 @@ defmodule Dotfiler.Link do
   end
 
   @doc """
+  Lists all currently managed symlinks with their status.
+
+  Reads the backup log and displays each managed symlink with status indicators:
+  - Valid: symlink exists and points to expected source
+  - Broken: symlink target doesn't exist
+  - Missing: file was backed up but symlink not found
+
+  ## Parameters
+    - `config` - Configuration map (default: nil, loads default if needed)
+
+  ## Returns
+    - `:ok` on completion
+
+  ## Examples
+      iex> Dotfiler.Link.list_symlinks()
+      # Lists all managed dotfiles
+  """
+  @spec list_symlinks(map() | nil) :: :ok
+  def list_symlinks(config \\ nil) do
+    config = config || Config.load()
+    backup_dir = backup_directory(config)
+    log_file = Path.join(backup_dir, "backup.log")
+
+    if File.exists?(log_file) do
+      Print.warning_message("Managed Dotfiles", 1)
+
+      entries =
+        log_file
+        |> File.read!()
+        |> String.split("\n", trim: true)
+        |> Enum.map(&parse_log_entry/1)
+        |> Enum.filter(&(&1 != nil))
+
+      if Enum.empty?(entries) do
+        Print.warning_message("No dotfiles currently managed", 2)
+      else
+        Enum.each(entries, &display_symlink_status/1)
+      end
+    else
+      Print.warning_message("No backup log found - no dotfiles are currently managed", 1)
+    end
+  end
+
+  defp parse_log_entry(log_entry) do
+    case String.split(log_entry, " | ") do
+      [_timestamp, filename, original_path, backup_path] ->
+        # Get the expected symlink target by reading the most recent entry for this file
+        %{
+          filename: filename,
+          original_path: original_path,
+          backup_path: backup_path
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp display_symlink_status(%{
+         filename: _filename,
+         original_path: original_path,
+         backup_path: _backup_path
+       }) do
+    # Use lstat to check file without following symlinks
+    case File.lstat(original_path) do
+      {:ok, %{type: :symlink}} ->
+        case File.read_link(original_path) do
+          {:ok, target} ->
+            Print.success_message("✓ #{original_path} → #{target}", 2)
+
+          {:error, _} ->
+            Print.failure_message("✗ #{original_path} (broken symlink)", 2)
+        end
+
+      {:ok, _} ->
+        Print.warning_message("⚠ #{original_path} (exists but not a symlink)", 2)
+
+      {:error, _} ->
+        Print.warning_message("⚠ #{original_path} (symlink not found)", 2)
+    end
+  end
+
+  @doc """
   Restores all backed up files from the backup directory.
 
   Processes the backup log in reverse order, removing symlinks and

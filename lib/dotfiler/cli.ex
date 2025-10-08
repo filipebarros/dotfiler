@@ -36,6 +36,7 @@ defmodule Dotfiler.CLI do
       help: :boolean,
       dry_run: :boolean,
       restore: :boolean,
+      list: :boolean,
       config: :string
     ]
 
@@ -45,6 +46,7 @@ defmodule Dotfiler.CLI do
       h: :help,
       d: :dry_run,
       r: :restore,
+      l: :list,
       c: :config
     ]
 
@@ -72,6 +74,7 @@ defmodule Dotfiler.CLI do
       Keyword.get(parsed, :help) -> Print.help()
       Keyword.get(parsed, :version) -> Print.version()
       Keyword.get(parsed, :restore) -> Link.restore_backups(merged_config)
+      Keyword.get(parsed, :list) -> Link.list_symlinks(merged_config)
       source -> execute(parsed_with_source, merged_config)
       true -> Print.help()
     end
