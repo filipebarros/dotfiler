@@ -30,6 +30,14 @@ defmodule Dotfiler.CLI do
   """
   @spec parse([String.t()]) :: :ok | no_return()
   def parse(args \\ []) do
+    {parsed, positional} = parse_arguments(args)
+    config = load_config(parsed)
+    source = resolve_source(positional, config)
+
+    route_command(parsed, source, config)
+  end
+
+  defp parse_arguments(args) do
     strict_options = [
       brew: :boolean,
       version: :boolean,
@@ -53,29 +61,29 @@ defmodule Dotfiler.CLI do
     {parsed, positional, _} =
       OptionParser.parse(args, strict: strict_options, aliases: aliased_options)
 
-    # Load configuration early
+    {parsed, positional}
+  end
+
+  defp load_config(parsed) do
     config_path = Keyword.get(parsed, :config)
-    config = Config.load(config_path)
+    base_config = Config.load(config_path)
+    Config.merge_with_cli_options(base_config, parsed)
+  end
 
-    # Merge CLI options with config (CLI takes precedence)
-    merged_config = Config.merge_with_cli_options(config, parsed)
+  defp resolve_source(positional, config) do
+    case positional do
+      [source_dir | _] -> source_dir
+      _ -> Config.get(config, [:general, :default_source])
+    end
+  end
 
-    # Get source from first positional argument or config default
-    source =
-      case positional do
-        [source_dir | _] -> source_dir
-        _ -> Config.get(merged_config, [:general, :default_source])
-      end
-
-    # Add source to parsed options if found
-    parsed_with_source = if source, do: Keyword.put(parsed, :source, source), else: parsed
-
+  defp route_command(parsed, source, config) do
     cond do
       Keyword.get(parsed, :help) -> Print.help()
       Keyword.get(parsed, :version) -> Print.version()
-      Keyword.get(parsed, :restore) -> Link.restore_backups(merged_config)
-      Keyword.get(parsed, :list) -> Link.list_symlinks(merged_config)
-      source -> execute(parsed_with_source, merged_config)
+      Keyword.get(parsed, :restore) -> Link.restore_backups(config)
+      Keyword.get(parsed, :list) -> Link.list_symlinks(config)
+      source -> execute(Keyword.put(parsed, :source, source), config)
       true -> Print.help()
     end
   end
