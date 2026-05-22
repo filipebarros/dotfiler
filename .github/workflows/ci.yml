@@ -12,11 +12,11 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ['1.18']
-        otp: ['27']
+        elixir: ['1.19']
+        otp: ['28']
 
     container:
-      image: elixir:${{ matrix.elixir }}-alpine
+      image: elixir:${{ matrix.elixir }}-otp-${{ matrix.otp }}-alpine
 
     steps:
     - name: Checkout code
