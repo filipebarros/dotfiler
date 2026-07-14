@@ -20,7 +20,7 @@ defmodule Dotfiler.Mixfile do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:meck, "~> 0.9", only: :test},
+      {:meck, "~> 1.2", only: :test},
       {:toml_elixir, "~> 2.0"}
     ]
   end

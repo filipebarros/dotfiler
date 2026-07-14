@@ -793,4 +793,176 @@ defmodule Dotfiler.LinkTest do
       refute output =~ "Would symlink"
     end
   end
+
+  describe "ledger completeness" do
+    test "first-time links are logged with a - sentinel" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+
+      capture_io(fn ->
+        Link.from_source(@source_dir)
+      end)
+
+      log = File.read!("#{@backup_dir}/backup.log")
+      assert log =~ "bashrc | #{@home_dir}/.bashrc | -"
+    end
+
+    test "first-time links appear in list_symlinks" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+
+      capture_io(fn -> Link.from_source(@source_dir) end)
+
+      output = capture_io(fn -> Link.list_symlinks() end)
+
+      assert output =~ "✓"
+      assert output =~ "#{@home_dir}/.bashrc"
+    end
+
+    test "restore removes first-time symlinks" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+
+      capture_io(fn -> Link.from_source(@source_dir) end)
+      assert File.exists?("#{@home_dir}/.bashrc")
+
+      capture_io(fn -> Link.restore_backups() end)
+
+      refute File.exists?("#{@home_dir}/.bashrc")
+    end
+
+    test "restore does not delete a regular file that replaced a first-time symlink" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+
+      capture_io(fn -> Link.from_source(@source_dir) end)
+
+      # User replaces the symlink with a real file
+      File.rm!("#{@home_dir}/.bashrc")
+      File.write!("#{@home_dir}/.bashrc", "user content")
+
+      capture_io(fn -> Link.restore_backups() end)
+
+      assert File.read!("#{@home_dir}/.bashrc") == "user content"
+    end
+
+    test "re-linking over an existing symlink logs a backup entry, not a sentinel" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+
+      capture_io(fn -> Link.from_source(@source_dir) end)
+      capture_io(fn -> Link.from_source(@source_dir) end)
+
+      log = File.read!("#{@backup_dir}/backup.log")
+      lines = String.split(log, "\n", trim: true)
+      assert length(lines) == 2
+      assert List.first(lines) =~ " | -"
+      refute List.last(lines) =~ " | -"
+    end
+  end
+
+  describe "config mappings" do
+    test "links mapped sources to explicit targets and skips their root folder" do
+      File.mkdir_p!("#{@source_dir}/launchd")
+      File.write!("#{@source_dir}/launchd/agent.plist", "<plist/>")
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "launchd/agent.plist" => "~/Library/LaunchAgents/agent.plist"
+        })
+
+      capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      assert File.exists?("#{@home_dir}/.bashrc")
+      refute File.exists?("#{@home_dir}/.launchd")
+
+      assert File.read_link("#{@home_dir}/Library/LaunchAgents/agent.plist") ==
+               {:ok, "#{@source_dir}/launchd/agent.plist"}
+    end
+
+    test "backs up an existing file at the mapped target and restores it" do
+      File.mkdir_p!("#{@source_dir}/launchd")
+      File.write!("#{@source_dir}/launchd/agent.plist", "<plist/>")
+      File.mkdir_p!("#{@home_dir}/Library/LaunchAgents")
+      File.write!("#{@home_dir}/Library/LaunchAgents/agent.plist", "old content")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "launchd/agent.plist" => "~/Library/LaunchAgents/agent.plist"
+        })
+
+      capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      target = "#{@home_dir}/Library/LaunchAgents/agent.plist"
+      assert {:ok, %{type: :symlink}} = File.lstat(target)
+      assert File.exists?("#{@backup_dir}/agent.plist")
+
+      capture_io(fn -> Link.restore_backups() end)
+
+      assert File.read!(target) == "old content"
+    end
+
+    test "dry run previews mappings without making changes" do
+      File.mkdir_p!("#{@source_dir}/launchd")
+      File.write!("#{@source_dir}/launchd/agent.plist", "<plist/>")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "launchd/agent.plist" => "~/Library/LaunchAgents/agent.plist"
+        })
+
+      output =
+        capture_io(fn -> Link.from_source(@source_dir, dry_run: true, config: config) end)
+
+      assert output =~ "Would symlink File"
+      assert output =~ "LaunchAgents/agent.plist"
+      refute File.exists?("#{@home_dir}/Library")
+    end
+
+    test "warns and skips when a mapped source is missing" do
+      File.mkdir_p!("#{@source_dir}/launchd")
+      File.write!("#{@source_dir}/launchd/agent.plist", "<plist/>")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "launchd/missing.plist" => "~/Library/LaunchAgents/missing.plist"
+        })
+
+      output = capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      assert output =~ "does not exist"
+      refute File.exists?("#{@home_dir}/Library/LaunchAgents/missing.plist")
+      # the root folder is still excluded from the default pass
+      refute File.exists?("#{@home_dir}/.launchd")
+    end
+
+    test "skips an already-correct mapped link without churn" do
+      File.mkdir_p!("#{@source_dir}/launchd")
+      File.write!("#{@source_dir}/launchd/agent.plist", "<plist/>")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "launchd/agent.plist" => "~/Library/LaunchAgents/agent.plist"
+        })
+
+      capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+      log_before = File.read!("#{@backup_dir}/backup.log")
+
+      output = capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      assert output =~ "Already linked"
+      assert File.read!("#{@backup_dir}/backup.log") == log_before
+    end
+
+    test "warns when multiple mappings share a target" do
+      File.write!("#{@source_dir}/one.conf", "1")
+      File.write!("#{@source_dir}/two.conf", "2")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "one.conf" => "~/shared_target",
+          "two.conf" => "~/shared_target"
+        })
+
+      output = capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      assert output =~ "Multiple mappings point at"
+    end
+  end
 end

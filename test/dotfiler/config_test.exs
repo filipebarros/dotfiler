@@ -14,10 +14,6 @@ defmodule Dotfiler.ConfigTest do
   [filtering]
   exclude = ["*.tmp", "*.log", ".*"]
 
-  [linking]
-  backup_existing = false
-  on_conflict = "skip"
-
   [packages]
   auto_brew = true
   brewfile_name = "CustomBrewfile"
@@ -30,9 +26,21 @@ defmodule Dotfiler.ConfigTest do
     # Save original working directory
     original_cwd = File.cwd!()
 
+    # Isolate from the developer's real ~/.dotfilerrc and XDG config
+    home_dir = Path.join(@tmp_dir, "home")
+    File.mkdir_p!(home_dir)
+    original_home = System.get_env("HOME")
+    System.put_env("HOME", home_dir)
+
     on_exit(fn ->
       File.rm_rf(@tmp_dir)
       File.cd!(original_cwd)
+
+      if original_home do
+        System.put_env("HOME", original_home)
+      else
+        System.delete_env("HOME")
+      end
     end)
 
     {:ok, tmp_dir: @tmp_dir, original_cwd: original_cwd}
@@ -46,6 +54,32 @@ defmodule Dotfiler.ConfigTest do
       assert config.general.dry_run == false
       assert config.filtering.exclude == [".*", "[A-Z]*"]
       assert config.packages.auto_brew == false
+    end
+
+    test "defaults linking.mappings to an empty map" do
+      config = Config.load()
+
+      assert Config.get(config, [:linking, :mappings]) == %{}
+    end
+
+    test "parses [linking.mappings] preserving string keys", %{tmp_dir: tmp_dir} do
+      config_path = Path.join(tmp_dir, "mappings.toml")
+
+      File.write!(config_path, """
+      [linking.mappings]
+      "launchd/agent.plist" = "~/Library/LaunchAgents/agent.plist"
+      """)
+
+      output =
+        capture_io(fn ->
+          config = Config.load(config_path)
+
+          assert Config.get(config, [:linking, :mappings]) == %{
+                   "launchd/agent.plist" => "~/Library/LaunchAgents/agent.plist"
+                 }
+        end)
+
+      refute output =~ "Unknown configuration"
     end
 
     test "loads configuration from custom path", %{tmp_dir: tmp_dir} do
