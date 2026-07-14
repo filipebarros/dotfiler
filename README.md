@@ -10,6 +10,7 @@ A safe and powerful dotfiles management tool written in Elixir. Dotfiler creates
 🔒 **Safety First**
 
 - Automatic backup of existing files before symlinking
+- Custom destination mappings via `[linking.mappings]` (e.g. launchd plists into `~/Library/LaunchAgents`)
 - Dry-run mode to preview changes without making them
 - Complete restore system to undo all changes
 - Comprehensive error handling and validation
@@ -130,6 +131,8 @@ Dotfiler supports TOML configuration files in multiple locations (priority order
 [general]
 backup_dir = "~/.dotfiler_backup"
 dry_run = false
+# Fallback source directory when no positional argument is given
+default_source = "~/dotfiles"
 
 [filtering]
 # Include patterns (default: ["*"])
@@ -144,8 +147,11 @@ use_gitignore = true
 # Custom ignore file name (default: ".dotfilerignore")
 ignore_file = ".dotfilerignore"
 
-[linking]
-backup_enabled = true
+# Link specific files to explicit destinations instead of ~/.<name>.
+# The first path component of each source is excluded from the default pass,
+# so a folder holding only mapped files never becomes a ~/.folder symlink.
+[linking.mappings]
+"launchd/com.example.agent.plist" = "~/Library/LaunchAgents/com.example.agent.plist"
 
 [packages]
 brewfile_name = "Brewfile"

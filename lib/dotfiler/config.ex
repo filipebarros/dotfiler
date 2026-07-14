@@ -23,6 +23,8 @@ defmodule Dotfiler.Config do
   @default_config %{
     general: %{
       backup_dir: "~/.dotfiler_backup",
+      # Fallback source directory when no positional argument is given
+      default_source: nil,
       dry_run: false,
       verbose: false
     },
@@ -33,8 +35,10 @@ defmodule Dotfiler.Config do
       use_gitignore: false
     },
     linking: %{
-      backup_existing: true,
-      on_conflict: "backup"
+      # Source-relative path => absolute or ~/ destination, linked there
+      # instead of ~/.<name>; the first path component of each source is
+      # excluded from the default linking pass. Keys stay strings.
+      mappings: %{}
     },
     packages: %{
       auto_brew: false,

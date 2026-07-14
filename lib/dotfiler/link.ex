@@ -16,6 +16,9 @@ defmodule Dotfiler.Link do
 
   Files are filtered based on configuration and linked to `~/.filename`.
   Existing files are automatically backed up before creating symlinks.
+  Entries under `[linking.mappings]` are linked to their configured targets
+  instead (see `create_mapped/5`); the first path component of each mapping
+  source is excluded from the default pass.
 
   ## Parameters
     - `source` - Path to the source directory containing dotfiles
@@ -42,10 +45,18 @@ defmodule Dotfiler.Link do
     case File.ls(source) do
       {:ok, files} ->
         filter = Filter.new(config, source)
+        mappings = Config.get(config, [:linking, :mappings], %{})
+        mapped_roots = mapped_root_components(mappings)
+        warn_duplicate_targets(mappings)
 
         files
         |> Enum.filter(&Filter.should_process?(filter, &1))
+        |> Enum.reject(&MapSet.member?(mapped_roots, &1))
         |> Enum.each(&create(source, &1, dry_run, config))
+
+        Enum.each(mappings, fn {rel_source, target} ->
+          create_mapped(source, rel_source, target, dry_run, config)
+        end)
 
       {:error, :enoent} ->
         Print.failure_message(
@@ -102,26 +113,128 @@ defmodule Dotfiler.Link do
       Print.warning_message("#{type}: #{full_path}", 1)
 
       # Create backup if file/directory exists
-      if File.exists?(dotfile_path) do
+      backed_up = File.exists?(dotfile_path)
+
+      if backed_up do
         backup_existing(dotfile_path, filename, config)
       end
 
-      case File.ln_s(full_path, dotfile_path) do
-        :ok ->
-          Print.success_message("Successfully symlinked #{type} #{dotfile_path}", 2)
+      link_and_log(full_path, dotfile_path, filename, type, backed_up, config)
+    end
+  end
 
-        {:error, :eexist} ->
-          Print.failure_message(
-            "#{type} #{dotfile_path} already exists. The backup may have failed. Please check manually.",
-            2
-          )
+  @doc """
+  Creates a symbolic link from a source-relative path to an explicit target.
 
-        {:error, reason} ->
-          Print.failure_message(
-            "Failed to create symlink for #{type} #{dotfile_path}: #{reason}. Check permissions and available space.",
-            2
-          )
+  Backs the `[linking.mappings]` configuration entries, for files that must
+  live outside the `~/.filename` convention (e.g. launchd plists in
+  `~/Library/LaunchAgents`). The first path component of each mapping source
+  is excluded from the default linking pass, so a folder that only holds
+  mapped files never becomes a `~/.folder` symlink.
+
+  Targets may be absolute or `~/`-prefixed; missing parent directories are
+  created. A target that already links to the mapped source is left untouched.
+
+  ## Parameters
+    - `source` - Source directory path
+    - `rel_source` - Path of the file or folder to link, relative to `source`
+    - `target` - Absolute or `~/`-prefixed destination path
+    - `dry_run` - If true, only preview the operation (default: false)
+    - `config` - Configuration map (default: nil, loads default if needed)
+
+  ## Returns
+    - `:ok` on success or dry-run completion
+  """
+  @spec create_mapped(String.t(), String.t(), String.t(), boolean(), map() | nil) :: :ok
+  def create_mapped(source, rel_source, target, dry_run \\ false, config \\ nil) do
+    config = config || Config.load()
+    full_path = file_path(source, rel_source)
+    target_path = expand_home(target)
+    type = type(full_path)
+
+    cond do
+      not File.exists?(full_path) ->
+        Print.failure_message(
+          "Mapped source #{full_path} does not exist. Skipping mapping to #{target_path}.",
+          1
+        )
+
+      File.read_link(target_path) == {:ok, full_path} ->
+        Print.success_message("Already linked #{type} #{target_path}", 2)
+
+      dry_run ->
+        Print.warning_message(
+          "[DRY RUN] Would symlink #{type}: #{full_path} -> #{target_path}",
+          1
+        )
+
+        if File.exists?(target_path) do
+          Print.warning_message("[DRY RUN] Would backup existing #{type} #{target_path}", 2)
+        end
+
+      true ->
+        Print.warning_message("#{type}: #{full_path}", 1)
+        File.mkdir_p(Path.dirname(target_path))
+        backed_up = File.exists?(target_path)
+
+        if backed_up do
+          backup_existing(target_path, Path.basename(target_path), config)
+        end
+
+        link_and_log(full_path, target_path, Path.basename(target_path), type, backed_up, config)
+    end
+
+    :ok
+  end
+
+  defp mapped_root_components(mappings) do
+    mappings
+    |> Map.keys()
+    |> Enum.map(fn rel_source -> rel_source |> Path.split() |> List.first() end)
+    |> MapSet.new()
+  end
+
+  defp warn_duplicate_targets(mappings) do
+    mappings
+    |> Enum.group_by(fn {_rel_source, target} -> target end)
+    |> Enum.each(fn {target, entries} ->
+      if length(entries) > 1 do
+        Print.warning_message(
+          "Multiple mappings point at #{target}; the resulting link is undefined",
+          1
+        )
       end
+    end)
+  end
+
+  defp expand_home(path) do
+    if String.starts_with?(path, "~/") do
+      Path.join(user_home(), String.slice(path, 2..-1//1))
+    else
+      Path.expand(path)
+    end
+  end
+
+  defp link_and_log(full_path, dotfile_path, filename, type, backed_up, config) do
+    case File.ln_s(full_path, dotfile_path) do
+      :ok ->
+        Print.success_message("Successfully symlinked #{type} #{dotfile_path}", 2)
+
+        # First-time links back up nothing, so without their own ledger entry
+        # ("-" sentinel) they'd be invisible to --list and --restore
+        if not backed_up, do: log_link(filename, dotfile_path, config)
+
+      {:error, :eexist} ->
+        Print.failure_message(
+          "#{type} #{dotfile_path} already exists. The backup may have failed. Please check manually.",
+          2
+        )
+
+      {:error, reason} ->
+        Print.failure_message(
+          "Failed to create symlink for #{type} #{dotfile_path}: #{reason}. Check permissions and available space.",
+          2
+        )
     end
   end
 
@@ -181,6 +294,12 @@ defmodule Dotfiler.Link do
     else
       Path.expand(backup_dir)
     end
+  end
+
+  defp log_link(filename, original_path, config) do
+    # backup_existing normally creates the backup dir; first-time links skip it
+    File.mkdir_p(backup_directory(config))
+    log_backup(filename, original_path, "-", config)
   end
 
   defp log_backup(filename, original_path, backup_path, config) do
@@ -312,11 +431,27 @@ defmodule Dotfiler.Link do
 
   defp restore_backup_entry(log_entry) do
     case String.split(log_entry, " | ") do
+      [_timestamp, filename, original_path, "-"] ->
+        remove_symlink_only(filename, original_path)
+
       [_timestamp, filename, original_path, backup_path] ->
         restore_file_if_backup_exists(filename, original_path, backup_path)
 
       _ ->
         Print.warning_message("Invalid backup log entry: #{log_entry}", 2)
+    end
+  end
+
+  # "-" ledger entries are first-time links with no backup to restore; remove
+  # the symlink only — never a regular file the user may have put in its place
+  defp remove_symlink_only(filename, original_path) do
+    case File.lstat(original_path) do
+      {:ok, %{type: :symlink}} ->
+        File.rm(original_path)
+        Print.success_message("Removed symlink #{original_path} (#{filename})", 2)
+
+      _ ->
+        :ok
     end
   end
 
