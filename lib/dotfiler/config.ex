@@ -130,21 +130,26 @@ defmodule Dotfiler.Config do
       File.exists?(".dotfilerrc") ->
         ".dotfilerrc"
 
-      File.exists?(Path.expand("~/.dotfilerrc")) ->
-        Path.expand("~/.dotfilerrc")
+      File.exists?(Path.join(user_home(), ".dotfilerrc")) ->
+        Path.join(user_home(), ".dotfilerrc")
 
-      File.exists?(Path.expand("~/.config/dotfiler/config.toml")) ->
-        Path.expand("~/.config/dotfiler/config.toml")
+      File.exists?(Path.join(user_home(), ".config/dotfiler/config.toml")) ->
+        Path.join(user_home(), ".config/dotfiler/config.toml")
 
       true ->
         nil
     end
   end
 
+  defp user_home do
+    # Use environment variable in tests for better testability
+    System.get_env("HOME") || System.user_home()
+  end
+
   defp load_config_file(path) do
     case File.read(path) do
       {:ok, content} ->
-        case TomlElixir.parse(content) do
+        case TomlElixir.decode(content) do
           {:ok, parsed_config} ->
             merge_configs(@default_config, normalize_config(parsed_config))
 
