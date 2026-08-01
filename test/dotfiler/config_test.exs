@@ -43,7 +43,7 @@ defmodule Dotfiler.ConfigTest do
       end
     end)
 
-    {:ok, tmp_dir: @tmp_dir, original_cwd: original_cwd}
+    {:ok, tmp_dir: @tmp_dir, original_cwd: original_cwd, home_dir: home_dir}
   end
 
   describe "load/1" do
@@ -106,15 +106,10 @@ defmodule Dotfiler.ConfigTest do
       assert config.packages.auto_brew == true
     end
 
-    test "loads configuration from ~/.dotfilerrc", %{tmp_dir: _tmp_dir} do
-      home_config = Path.expand("~/.dotfilerrc")
-
-      # Clean up any existing config
-      File.rm(home_config)
+    test "loads configuration from ~/.dotfilerrc", %{home_dir: home_dir} do
+      home_config = Path.join(home_dir, ".dotfilerrc")
 
       File.write!(home_config, @test_config_content)
-
-      on_exit(fn -> File.rm(home_config) end)
 
       config = Config.load()
 
@@ -122,11 +117,11 @@ defmodule Dotfiler.ConfigTest do
       assert config.packages.auto_brew == true
     end
 
-    test "prioritizes project config over user config", %{tmp_dir: tmp_dir} do
+    test "prioritizes project config over user config", %{tmp_dir: tmp_dir, home_dir: home_dir} do
       File.cd!(tmp_dir)
 
       # Create user config
-      home_config = Path.expand("~/.dotfilerrc")
+      home_config = Path.join(home_dir, ".dotfilerrc")
 
       File.write!(home_config, """
       [general]
@@ -140,8 +135,6 @@ defmodule Dotfiler.ConfigTest do
       [general]
       backup_dir = "~/project_backup"
       """)
-
-      on_exit(fn -> File.rm(home_config) end)
 
       config = Config.load()
 
@@ -279,28 +272,15 @@ defmodule Dotfiler.ConfigTest do
   end
 
   describe "configuration file discovery" do
-    test "finds configuration in XDG config directory", %{tmp_dir: tmp_dir} do
-      # Mock the home directory for this test
-      xdg_config_dir = Path.join(tmp_dir, ".config/dotfiler")
+    test "finds configuration in XDG config directory", %{home_dir: home_dir} do
+      xdg_config_dir = Path.join(home_dir, ".config/dotfiler")
       File.mkdir_p!(xdg_config_dir)
 
       config_file = Path.join(xdg_config_dir, "config.toml")
       File.write!(config_file, @test_config_content)
 
-      # Mock Path.expand to return our test directory
-      :meck.new(Path, [:passthrough])
-
-      :meck.expect(Path, :expand, fn
-        "~/.config/dotfiler/config.toml" -> config_file
-        path -> :meck.passthrough([path])
-      end)
-
-      try do
-        config = Config.load()
-        assert config.general.backup_dir == "~/custom_backup"
-      after
-        :meck.unload(Path)
-      end
+      config = Config.load()
+      assert config.general.backup_dir == "~/custom_backup"
     end
   end
 end
