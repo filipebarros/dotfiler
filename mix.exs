@@ -4,7 +4,7 @@ defmodule Dotfiler.Mixfile do
   def project do
     [
       app: :dotfiler,
-      version: "1.2.0",
+      version: "1.2.1",
       elixir: "~> 1.19",
       escript: escript(),
       start_permanent: Mix.env() == :prod,
