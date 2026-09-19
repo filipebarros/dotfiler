@@ -1,7 +1,7 @@
 # Dotfiler
 
 [![CI](https://github.com/filipebarros/dotfiler/actions/workflows/ci.yml/badge.svg)](https://github.com/filipebarros/dotfiler/actions/workflows/ci.yml)
-[![Elixir Version](https://img.shields.io/badge/elixir-~%3E%201.18-purple.svg)](https://elixir-lang.org)
+[![Elixir Version](https://img.shields.io/badge/elixir-~%3E%201.19-purple.svg)](https://elixir-lang.org)
 
 A safe and powerful dotfiles management tool written in Elixir. Dotfiler creates symbolic links from your dotfiles directory to your home directory with automatic backups, dry-run preview, and complete restore functionality.
 
@@ -80,6 +80,9 @@ mix escript.build
 # Restore all backed up files and remove symlinks
 ./bin/dotfiler --restore
 
+# List all currently managed symlinks
+./bin/dotfiler --list
+
 # Show help
 ./bin/dotfiler --help
 
@@ -95,6 +98,8 @@ mix escript.build
 | `--brew` | `-b` | Install Homebrew packages from Brewfile |
 | `--dry-run` | `-d` | Preview changes without making them |
 | `--restore` | `-r` | Restore backed up files and remove symlinks |
+| `--list` | `-l` | List all currently managed symlinks with status |
+| `--config FILE` | `-c` | Use custom configuration file |
 | `--version` | `-v` | Show version information |
 | `--help` | `-h` | Show help message |
 
@@ -224,7 +229,7 @@ This will:
 
 ### Prerequisites
 
-- Elixir 1.18+ with OTP 27+
+- Elixir ~> 1.19 with OTP 28+
 - Git (for development workflow)
 
 ### Setup
@@ -337,37 +342,4 @@ All modules have comprehensive type specifications (`@spec`) and documentation (
 
 ## Changelog
 
-### v0.1.0
-
-**Core Features:**
-- Safe symbolic link creation with automatic backups
-- Complete restore system to undo all changes
-- Dry-run mode for previewing changes
-- Homebrew integration with Brewfile support
-
-**Advanced Filtering:**
-- `.dotfilerignore` support with gitignore-style patterns
-- `.gitignore` integration (optional)
-- Wildcard patterns (`*`, `?`)
-- Negation patterns (`!important.conf`)
-- Directory patterns (`cache/`)
-- Root-relative patterns (`/local-only`)
-
-**Configuration System:**
-- TOML-based configuration
-- Multiple file locations (project, user, XDG)
-- CLI options override configuration
-- Customizable filtering, backup, and package settings
-
-**Developer Tools:**
-- Full type specifications (Dialyzer-clean)
-- Comprehensive documentation with ExDoc
-- 120+ tests with 95%+ coverage
-- Git hooks for code quality
-- CI/CD with format checking, Credo, and Dialyzer
-
-**Quality Assurance:**
-- Static analysis with Credo
-- Type checking with Dialyzer
-- Automated code formatting
-- Conventional commit enforcement
+For a complete history of changes and releases, see [CHANGELOG.md](CHANGELOG.md).
