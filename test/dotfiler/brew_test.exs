@@ -251,12 +251,22 @@ defmodule Dotfiler.BrewTest do
 
       """)
 
-      output =
-        capture_io(fn ->
-          Brew.bundle(@tmp_dir)
-        end)
+      :meck.new(System, [:passthrough])
 
-      assert output =~ "Installing Homebrew packages"
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @tmp_dir] ->
+        {"", 0}
+      end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Brew.bundle(@tmp_dir)
+          end)
+
+        assert output =~ "Successfully installed Homebrew packages"
+      after
+        :meck.unload(System)
+      end
     end
 
     test "handles very long source path" do
