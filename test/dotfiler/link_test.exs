@@ -347,20 +347,23 @@ defmodule Dotfiler.LinkTest do
       # Create existing file in home
       File.write!("#{@home_dir}/.testfile", "existing content")
 
-      # Make backup directory read-only to simulate permission error
-      File.mkdir_p!(@backup_dir)
-      File.chmod!(@backup_dir, 0o444)
+      # Make the backup dir's parent read-only so it can't be created at all.
+      # A restrictive mode on an *existing* backup dir is no longer a failure
+      # case: ensure_backup_dir/1 (link.ex) self-heals it via chmod 0700, since
+      # the owner can always chmod a directory they own regardless of its
+      # current mode.
+      File.chmod!(@home_dir, 0o555)
 
       output =
         capture_io(fn ->
           Link.from_source(@source_dir)
         end)
 
-      # Should attempt to create backup but handle permission error gracefully
-      assert output =~ "File: #{@source_dir}/testfile"
+      assert output =~ "Failed to create backup directory"
+      refute File.exists?(@backup_dir)
 
       # Restore permissions for cleanup
-      File.chmod!(@backup_dir, 0o755)
+      File.chmod!(@home_dir, 0o755)
     end
 
     test "handles symlink creation failures" do
