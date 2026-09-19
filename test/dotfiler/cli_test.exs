@@ -95,13 +95,23 @@ defmodule Dotfiler.CLITest do
     test "handles source directory with brew flag" do
       File.write!("#{@source_dir}/Brewfile", "brew 'git'")
 
-      output =
-        capture_io(fn ->
-          CLI.parse([@source_dir, "--brew"])
-        end)
+      :meck.new(System, [:passthrough])
 
-      # Should attempt to install Homebrew packages and link files
-      assert output =~ "Installing Homebrew packages" or output =~ "No Brewfile found"
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @source_dir] ->
+        {"", 0}
+      end)
+
+      try do
+        output =
+          capture_io(fn ->
+            CLI.parse([@source_dir, "--brew"])
+          end)
+
+        # Should attempt to install Homebrew packages and link files
+        assert output =~ "Installing Homebrew packages" or output =~ "No Brewfile found"
+      after
+        :meck.unload(System)
+      end
     end
 
     test "handles short flag variations" do
@@ -406,13 +416,23 @@ defmodule Dotfiler.CLITest do
     test "positional argument with brew flag" do
       File.write!("#{@source_dir}/Brewfile", "brew 'git'")
 
-      output =
-        capture_io(fn ->
-          CLI.parse([@source_dir, "--brew"])
-        end)
+      :meck.new(System, [:passthrough])
 
-      # Should attempt to install Homebrew packages and link files
-      assert output =~ "Installing Homebrew packages" or output =~ "No Brewfile found"
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @source_dir] ->
+        {"", 0}
+      end)
+
+      try do
+        output =
+          capture_io(fn ->
+            CLI.parse([@source_dir, "--brew"])
+          end)
+
+        # Should attempt to install Homebrew packages and link files
+        assert output =~ "Installing Homebrew packages" or output =~ "No Brewfile found"
+      after
+        :meck.unload(System)
+      end
     end
 
     test "positional argument with multiple flags" do
