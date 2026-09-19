@@ -103,24 +103,34 @@ defmodule Dotfiler.Link do
     type = type(full_path)
     dotfile_path = dotfile_path(filename)
 
-    if dry_run do
-      Print.warning_message("[DRY RUN] Would symlink #{type}: #{full_path} -> #{dotfile_path}", 1)
+    cond do
+      File.read_link(dotfile_path) == {:ok, full_path} ->
+        Print.success_message("Already linked #{type} #{dotfile_path}", 2)
 
-      if File.exists?(dotfile_path) do
-        Print.warning_message("[DRY RUN] Would backup existing #{type} #{dotfile_path}", 2)
-      end
-    else
-      Print.warning_message("#{type}: #{full_path}", 1)
+      dry_run ->
+        Print.warning_message(
+          "[DRY RUN] Would symlink #{type}: #{full_path} -> #{dotfile_path}",
+          1
+        )
 
-      # Create backup if file/directory exists
-      backed_up = File.exists?(dotfile_path)
+        if File.exists?(dotfile_path) do
+          Print.warning_message("[DRY RUN] Would backup existing #{type} #{dotfile_path}", 2)
+        end
 
-      if backed_up do
-        backup_existing(dotfile_path, filename, config)
-      end
+      true ->
+        Print.warning_message("#{type}: #{full_path}", 1)
 
-      link_and_log(full_path, dotfile_path, filename, type, backed_up, config)
+        # Create backup if file/directory exists
+        backed_up = File.exists?(dotfile_path)
+
+        if backed_up do
+          backup_existing(dotfile_path, filename, config)
+        end
+
+        link_and_log(full_path, dotfile_path, filename, type, backed_up, config)
     end
+
+    :ok
   end
 
   @doc """
@@ -152,6 +162,32 @@ defmodule Dotfiler.Link do
     target_path = expand_home(target)
     type = type(full_path)
 
+    case containment_violation(source, rel_source, full_path, target_path) do
+      {:error, message} ->
+        Print.failure_message(message, 1)
+
+      :ok ->
+        create_mapped_link(full_path, target_path, type, dry_run, config)
+    end
+
+    :ok
+  end
+
+  defp containment_violation(source, rel_source, full_path, target_path) do
+    cond do
+      not source_contained?(source, full_path) ->
+        {:error, "Mapped source #{rel_source} escapes the source directory. Skipping."}
+
+      not target_contained?(target_path) ->
+        {:error,
+         "Mapped target #{target_path} is outside the home directory. Skipping mapping from #{rel_source}."}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp create_mapped_link(full_path, target_path, type, dry_run, config) do
     cond do
       not File.exists?(full_path) ->
         Print.failure_message(
@@ -183,8 +219,6 @@ defmodule Dotfiler.Link do
 
         link_and_log(full_path, target_path, Path.basename(target_path), type, backed_up, config)
     end
-
-    :ok
   end
 
   defp mapped_root_components(mappings) do
@@ -207,9 +241,19 @@ defmodule Dotfiler.Link do
     end)
   end
 
+  defp source_contained?(source, full_path) do
+    root = Path.expand(source)
+    String.starts_with?(Path.expand(full_path), root <> "/")
+  end
+
+  defp target_contained?(target_path) do
+    home = Config.user_home()
+    target_path == home or String.starts_with?(target_path, home <> "/")
+  end
+
   defp expand_home(path) do
     if String.starts_with?(path, "~/") do
-      Path.join(user_home(), String.slice(path, 2..-1//1))
+      Path.join(Config.user_home(), String.slice(path, 2..-1//1))
     else
       Path.expand(path)
     end
@@ -243,7 +287,7 @@ defmodule Dotfiler.Link do
   end
 
   defp dotfile_path(filename) do
-    file_path(user_home(), ".#{filename}")
+    file_path(Config.user_home(), ".#{filename}")
   end
 
   defp type(filepath) do
@@ -256,7 +300,7 @@ defmodule Dotfiler.Link do
   defp backup_existing(dotfile_path, filename, config) do
     backup_dir = backup_directory(config)
 
-    case File.mkdir_p(backup_dir) do
+    case ensure_backup_dir(backup_dir) do
       :ok ->
         backup_path = get_unique_backup_path(backup_dir, filename)
 
@@ -278,8 +322,8 @@ defmodule Dotfiler.Link do
     base_path = Path.join(backup_dir, filename)
 
     if File.exists?(base_path) do
-      timestamp = DateTime.utc_now() |> DateTime.to_unix()
-      Path.join(backup_dir, "#{filename}.#{timestamp}")
+      unique = System.unique_integer([:positive, :monotonic])
+      Path.join(backup_dir, "#{filename}.#{unique}")
     else
       base_path
     end
@@ -288,17 +332,28 @@ defmodule Dotfiler.Link do
   defp backup_directory(config) do
     backup_dir = Config.get(config, [:general, :backup_dir], "~/.dotfiler_backup")
 
-    # Handle tilde expansion properly for tests by using user_home()
+    # Handle tilde expansion properly for tests by using Config.user_home()
     if String.starts_with?(backup_dir, "~/") do
-      Path.join(user_home(), String.slice(backup_dir, 2..-1//1))
+      Path.join(Config.user_home(), String.slice(backup_dir, 2..-1//1))
     else
       Path.expand(backup_dir)
     end
   end
 
+  defp ensure_backup_dir(dir) do
+    case File.mkdir_p(dir) do
+      :ok ->
+        File.chmod(dir, 0o700)
+        :ok
+
+      error ->
+        error
+    end
+  end
+
   defp log_link(filename, original_path, config) do
     # backup_existing normally creates the backup dir; first-time links skip it
-    File.mkdir_p(backup_directory(config))
+    ensure_backup_dir(backup_directory(config))
     log_backup(filename, original_path, "-", config)
   end
 
@@ -308,6 +363,7 @@ defmodule Dotfiler.Link do
     log_entry = "#{timestamp} | #{filename} | #{original_path} | #{backup_path}\n"
 
     File.write(log_file, log_entry, [:append])
+    File.chmod(log_file, 0o600)
   end
 
   @doc """
@@ -476,10 +532,5 @@ defmodule Dotfiler.Link do
       {:error, reason} ->
         Print.failure_message("Failed to restore #{filename}: #{reason}", 2)
     end
-  end
-
-  defp user_home do
-    # Use environment variable in tests for better testability
-    System.get_env("HOME") || System.user_home()
   end
 end

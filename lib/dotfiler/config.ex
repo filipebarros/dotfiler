@@ -141,7 +141,12 @@ defmodule Dotfiler.Config do
     end
   end
 
-  defp user_home do
+  @doc """
+  Returns the current user's home directory, preferring the `HOME`
+  environment variable when set.
+  """
+  @spec user_home() :: String.t()
+  def user_home do
     # Use environment variable in tests for better testability
     System.get_env("HOME") || System.user_home()
   end
@@ -174,33 +179,27 @@ defmodule Dotfiler.Config do
 
   defp normalize_config(config) do
     config
-    |> Enum.reduce(%{}, fn {key, value}, acc ->
-      try do
-        atom_key = String.to_existing_atom(key)
-        Map.put(acc, atom_key, normalize_section(value))
-      rescue
-        ArgumentError ->
-          Print.failure_message("Unknown configuration section '#{key}' found in config file", 1)
-          acc
-      end
-    end)
+    |> atomize_keys(&"Unknown configuration section '#{&1}' found in config file")
+    |> Map.new(fn {key, value} -> {key, normalize_section(value)} end)
   end
 
   defp normalize_section(section) when is_map(section) do
-    section
-    |> Enum.reduce(%{}, fn {key, value}, acc ->
+    atomize_keys(section, &"Unknown configuration key '#{&1}' found in config file")
+  end
+
+  defp normalize_section(value), do: value
+
+  defp atomize_keys(map, warning) do
+    Enum.reduce(map, %{}, fn {key, value}, acc ->
       try do
-        atom_key = String.to_existing_atom(key)
-        Map.put(acc, atom_key, value)
+        Map.put(acc, String.to_existing_atom(key), value)
       rescue
         ArgumentError ->
-          Print.failure_message("Unknown configuration key '#{key}' found in config file", 1)
+          Print.failure_message(warning.(key), 1)
           acc
       end
     end)
   end
-
-  defp normalize_section(value), do: value
 
   defp merge_configs(base, override) do
     Map.merge(base, override, fn _key, base_val, override_val ->
