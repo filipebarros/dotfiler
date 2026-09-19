@@ -407,6 +407,78 @@ defmodule Dotfiler.FilterTest do
     end
   end
 
+  describe "pattern matching correctness fixes" do
+    test "malformed pattern with unbalanced bracket does not crash should_process?" do
+      config = %{
+        filtering: %{
+          include: ["*"],
+          exclude: ["[invalid*"]
+        }
+      }
+
+      filter = Filter.new(config, @source_dir)
+
+      assert Filter.should_process?(filter, "somefile.txt")
+    end
+
+    test "non-glob exclude pattern does not substring-match filenames" do
+      config = %{
+        filtering: %{
+          include: ["*"],
+          exclude: ["log"]
+        }
+      }
+
+      filter = Filter.new(config, @source_dir)
+
+      refute Filter.should_process?(filter, "log")
+      assert Filter.should_process?(filter, "changelog")
+    end
+
+    test "root-relative ignore pattern does not prefix-match filenames" do
+      ignore_content = """
+      /local-config
+      """
+
+      File.write!(Path.join(@source_dir, ".dotfilerignore"), ignore_content)
+
+      config = %{
+        filtering: %{
+          include: ["*"],
+          exclude: [],
+          ignore_file: ".dotfilerignore"
+        }
+      }
+
+      filter = Filter.new(config, @source_dir)
+
+      refute Filter.should_process?(filter, "local-config")
+      assert Filter.should_process?(filter, "local-config-backup")
+    end
+
+    test "out-of-order negation is overridden by a later matching pattern" do
+      ignore_content = """
+      !keep.log
+      *.log
+      keep.log
+      """
+
+      File.write!(Path.join(@source_dir, ".dotfilerignore"), ignore_content)
+
+      config = %{
+        filtering: %{
+          include: ["*"],
+          exclude: [],
+          ignore_file: ".dotfilerignore"
+        }
+      }
+
+      filter = Filter.new(config, @source_dir)
+
+      refute Filter.should_process?(filter, "keep.log")
+    end
+  end
+
   describe "combined filtering rules" do
     test "applies all filtering rules in correct priority" do
       # Create ignore files

@@ -154,8 +154,8 @@ defmodule Dotfiler.Filter do
         {:root_relative, String.slice(pattern, 1..-1//1)}
 
       String.ends_with?(pattern, "/") ->
-        # Directory pattern
-        {:directory, String.slice(pattern, 0..-2//1)}
+        # Directory pattern - strip the trailing slash and parse what's left
+        parse_ignore_pattern(String.slice(pattern, 0..-2//1))
 
       String.contains?(pattern, "*") or String.contains?(pattern, "?") ->
         # Glob pattern
@@ -168,25 +168,11 @@ defmodule Dotfiler.Filter do
   end
 
   defp matches_ignore_patterns?(patterns, filename) do
-    # Check if file should be ignored based on .dotfilerignore/.gitignore patterns
-    {negations, normal_patterns} =
-      Enum.split_with(patterns, fn
-        {:negate, _} -> true
-        _ -> false
-      end)
-
-    # First check if any normal pattern matches (would exclude)
-    excluded = Enum.any?(normal_patterns, &pattern_matches?(&1, filename))
-
-    # Then check if any negation pattern matches (would include back)
-    if excluded do
-      not Enum.any?(negations, fn {:negate, inner_pattern} ->
-        # Use the inner pattern with its original type preserved
-        pattern_matches?(inner_pattern, filename)
-      end)
-    else
-      false
-    end
+    # Real gitignore semantics: later patterns in the file win over earlier ones
+    Enum.reduce(patterns, false, fn
+      {:negate, inner}, ignored -> if pattern_matches?(inner, filename), do: false, else: ignored
+      pattern, ignored -> if pattern_matches?(pattern, filename), do: true, else: ignored
+    end)
   end
 
   defp matches_include_patterns?(patterns, filename) do
@@ -207,20 +193,7 @@ defmodule Dotfiler.Filter do
   end
 
   defp pattern_matches?({:glob, pattern}, filename) do
-    # Convert glob pattern to regex
-    regex_pattern =
-      pattern
-      |> String.replace(".", "\\.")
-      |> String.replace("*", ".*")
-      |> String.replace("?", ".")
-
-    String.match?(filename, ~r/^#{regex_pattern}$/)
-  end
-
-  defp pattern_matches?({:directory, pattern}, filename) do
-    # For directory patterns, we don't have directory info in this context
-    # So we treat it as a simple pattern match
-    simple_pattern_matches?(pattern, filename)
+    glob_match?(pattern, filename)
   end
 
   defp pattern_matches?({:root_relative, pattern}, filename) do
@@ -228,35 +201,21 @@ defmodule Dotfiler.Filter do
     # Check if the pattern contains wildcards
     if String.contains?(pattern, "*") or String.contains?(pattern, "?") do
       # Treat as a glob pattern that must match from the start
-      regex_pattern =
-        pattern
-        |> String.replace(".", "\\.")
-        |> String.replace("*", ".*")
-        |> String.replace("?", ".")
-
-      String.match?(filename, ~r/^#{regex_pattern}$/)
+      glob_match?(pattern, filename)
     else
-      String.starts_with?(filename, pattern)
+      filename == pattern
     end
   end
 
   defp simple_pattern_matches?(pattern, filename) do
-    case pattern do
-      ".*" -> starts_with_dot?(filename)
-      "[A-Z]*" -> starts_with_uppercase?(filename)
-      _ -> match_pattern(pattern, filename)
-    end
+    match_pattern(pattern, filename)
   end
-
-  defp starts_with_dot?(filename), do: String.starts_with?(filename, ".")
-
-  defp starts_with_uppercase?(filename), do: String.match?(filename, ~r/^[A-Z]/)
 
   defp match_pattern(pattern, filename) do
     if has_wildcards?(pattern) do
-      wildcard_match(pattern, filename)
+      glob_match?(pattern, filename)
     else
-      exact_or_substring_match(pattern, filename)
+      filename == pattern
     end
   end
 
@@ -264,30 +223,16 @@ defmodule Dotfiler.Filter do
     String.contains?(pattern, "*") or String.contains?(pattern, "?")
   end
 
-  defp wildcard_match(pattern, filename) do
-    if String.starts_with?(pattern, "*") do
-      star_prefix_match(pattern, filename)
-    else
-      regex_wildcard_match(pattern, filename)
-    end
-  end
-
-  defp star_prefix_match(pattern, filename) do
-    suffix = String.slice(pattern, 1..-1//1)
-    String.ends_with?(filename, suffix)
-  end
-
-  defp regex_wildcard_match(pattern, filename) do
-    regex_pattern =
+  defp glob_match?(pattern, filename) do
+    regex_source =
       pattern
       |> String.replace(".", "\\.")
       |> String.replace("*", ".*")
       |> String.replace("?", ".")
 
-    String.match?(filename, ~r/^#{regex_pattern}$/)
-  end
-
-  defp exact_or_substring_match(pattern, filename) do
-    filename == pattern or String.contains?(filename, pattern)
+    case Regex.compile("^#{regex_source}$") do
+      {:ok, regex} -> String.match?(filename, regex)
+      {:error, _reason} -> false
+    end
   end
 end
