@@ -57,44 +57,43 @@ defmodule Dotfiler.BrewTest do
       brew "git"
       """)
 
-      # This will fail because we don't have brew installed in test/CI env
-      # but we can test that it attempts to run the command and handles the error
-      output =
-        capture_io(fn ->
-          Brew.bundle(@tmp_dir)
-        end)
+      :meck.new(System, [:passthrough])
 
-      assert output =~ "Installing Homebrew packages"
-      # In CI/test environments without brew, it should show the error message
-      assert output =~ "Installing Homebrew packages" or output =~ "brew command not found"
-    end
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @tmp_dir] ->
+        {"", 0}
+      end)
 
-    test "handles brew command not found error" do
-      File.write!("#{@tmp_dir}/Brewfile", """
-      brew "nonexistent"
-      """)
+      try do
+        output =
+          capture_io(fn ->
+            Brew.bundle(@tmp_dir)
+          end)
 
-      # Mock System.cmd to raise ErlangError (command not found)
-      output =
-        capture_io(fn ->
-          # This should trigger the rescue clause for missing brew command
-          Brew.bundle(@tmp_dir)
-        end)
-
-      assert output =~ "Installing Homebrew packages"
-      # Should handle the error gracefully
-      assert output =~ "Installing Homebrew packages" or output =~ "brew command not found"
+        assert output =~ "Successfully installed Homebrew packages"
+      after
+        :meck.unload(System)
+      end
     end
 
     test "handles empty Brewfile" do
       File.write!("#{@tmp_dir}/Brewfile", "")
 
-      output =
-        capture_io(fn ->
-          Brew.bundle(@tmp_dir)
-        end)
+      :meck.new(System, [:passthrough])
 
-      assert output =~ "Installing Homebrew packages"
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @tmp_dir] ->
+        {"", 0}
+      end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Brew.bundle(@tmp_dir)
+          end)
+
+        assert output =~ "Successfully installed Homebrew packages"
+      after
+        :meck.unload(System)
+      end
     end
 
     test "handles Brewfile with comments only" do
@@ -103,12 +102,22 @@ defmodule Dotfiler.BrewTest do
       # Another comment
       """)
 
-      output =
-        capture_io(fn ->
-          Brew.bundle(@tmp_dir)
-        end)
+      :meck.new(System, [:passthrough])
 
-      assert output =~ "Installing Homebrew packages"
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @tmp_dir] ->
+        {"", 0}
+      end)
+
+      try do
+        output =
+          capture_io(fn ->
+            Brew.bundle(@tmp_dir)
+          end)
+
+        assert output =~ "Successfully installed Homebrew packages"
+      after
+        :meck.unload(System)
+      end
     end
   end
 
@@ -216,26 +225,23 @@ defmodule Dotfiler.BrewTest do
       Random text that will cause brew bundle to fail
       """)
 
-      # Let the real brew command handle the corrupted file
-      # We expect it to fail, but our code should handle the failure gracefully
-      output =
-        capture_io(fn ->
-          Brew.bundle(@tmp_dir)
-        end)
+      :meck.new(System, [:passthrough])
 
-      assert output =~ "Installing Homebrew packages"
-      # The exact error will depend on brew's response to the corrupted file
-    end
+      :meck.expect(System, :cmd, fn "brew", ["bundle"], [cd: @tmp_dir] ->
+        {"Error: Invalid Brewfile syntax", 1}
+      end)
 
-    test "handles empty Brewfile" do
-      File.write!("#{@tmp_dir}/Brewfile", "")
+      try do
+        output =
+          capture_io(fn ->
+            Brew.bundle(@tmp_dir)
+          end)
 
-      output =
-        capture_io(fn ->
-          Brew.bundle(@tmp_dir)
-        end)
-
-      assert output =~ "Installing Homebrew packages"
+        assert output =~ "Failed to install Homebrew packages (exit code: 1)"
+        assert output =~ "Error output: Error: Invalid Brewfile syntax"
+      after
+        :meck.unload(System)
+      end
     end
 
     test "handles Brewfile with only whitespace" do
