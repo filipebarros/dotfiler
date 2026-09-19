@@ -337,22 +337,19 @@ defmodule Dotfiler.LinkTest do
 
   describe "edge cases" do
     test "handles permission errors when creating backups" do
-      # Ensure clean state first
-      File.chmod!(@home_dir, 0o755)
-      File.rm_rf(@backup_dir)
-
       # Create source file
       File.write!("#{@source_dir}/testfile", "test content")
 
       # Create existing file in home
       File.write!("#{@home_dir}/.testfile", "existing content")
 
-      # Make the backup dir's parent read-only so it can't be created at all.
-      # A restrictive mode on an *existing* backup dir is no longer a failure
-      # case: ensure_backup_dir/1 (link.ex) self-heals it via chmod 0700, since
-      # the owner can always chmod a directory they own regardless of its
-      # current mode.
-      File.chmod!(@home_dir, 0o555)
+      # Block backup dir creation with a plain file at that exact path. A
+      # chmod-based restriction doesn't work here: root (e.g. CI running in a
+      # container) ignores permission bits entirely, so a 0o555 parent dir
+      # still allows mkdir_p to succeed there. A file already occupying the
+      # target path makes mkdir_p fail with :eexist unconditionally, root
+      # included, since that's a structural conflict, not a permission check.
+      File.write!(@backup_dir, "blocking file")
 
       output =
         capture_io(fn ->
@@ -360,10 +357,8 @@ defmodule Dotfiler.LinkTest do
         end)
 
       assert output =~ "Failed to create backup directory"
-      refute File.exists?(@backup_dir)
-
-      # Restore permissions for cleanup
-      File.chmod!(@home_dir, 0o755)
+      refute File.dir?(@backup_dir)
+      assert File.read!(@backup_dir) == "blocking file"
     end
 
     test "handles symlink creation failures" do
