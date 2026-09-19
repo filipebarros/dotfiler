@@ -842,17 +842,55 @@ defmodule Dotfiler.LinkTest do
       assert File.read!("#{@home_dir}/.bashrc") == "user content"
     end
 
-    test "re-linking over an existing symlink logs a backup entry, not a sentinel" do
+    test "re-running link creation is idempotent: no duplicate backup or log entry" do
       File.write!("#{@source_dir}/bashrc", "# bashrc")
 
       capture_io(fn -> Link.from_source(@source_dir) end)
-      capture_io(fn -> Link.from_source(@source_dir) end)
+      output = capture_io(fn -> Link.from_source(@source_dir) end)
+
+      assert output =~ "Already linked"
 
       log = File.read!("#{@backup_dir}/backup.log")
       lines = String.split(log, "\n", trim: true)
-      assert length(lines) == 2
+      assert length(lines) == 1
       assert List.first(lines) =~ " | -"
-      refute List.last(lines) =~ " | -"
+
+      {:ok, files} = File.ls(@backup_dir)
+      refute Enum.any?(files, &String.starts_with?(&1, "bashrc."))
+    end
+  end
+
+  describe "backup permission hardening" do
+    test "backup directory ends up 0700 and backup.log ends up 0600 after a run" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+      File.write!("#{@home_dir}/.bashrc", "# existing")
+
+      capture_io(fn -> Link.from_source(@source_dir) end)
+
+      assert Bitwise.band(File.stat!(@backup_dir).mode, 0o777) == 0o700
+      assert Bitwise.band(File.stat!("#{@backup_dir}/backup.log").mode, 0o777) == 0o600
+    end
+  end
+
+  describe "backup name collisions" do
+    test "two same-tick backups of the same filename don't collide" do
+      File.write!("#{@source_dir}/bashrc", "# bashrc")
+      File.write!("#{@home_dir}/.bashrc", "v1")
+
+      capture_io(fn -> Link.from_source(@source_dir) end)
+      assert File.exists?("#{@backup_dir}/bashrc")
+
+      File.rm!("#{@home_dir}/.bashrc")
+      File.write!("#{@home_dir}/.bashrc", "v2")
+      capture_io(fn -> Link.from_source(@source_dir) end)
+
+      File.rm!("#{@home_dir}/.bashrc")
+      File.write!("#{@home_dir}/.bashrc", "v3")
+      capture_io(fn -> Link.from_source(@source_dir) end)
+
+      {:ok, files} = File.ls(@backup_dir)
+      collided_names = Enum.filter(files, &String.starts_with?(&1, "bashrc."))
+      assert length(collided_names) == 2
     end
   end
 
@@ -948,6 +986,35 @@ defmodule Dotfiler.LinkTest do
 
       assert output =~ "Already linked"
       assert File.read!("#{@backup_dir}/backup.log") == log_before
+    end
+
+    test "rejects a mapped target that resolves outside the home directory" do
+      File.write!("#{@source_dir}/evil", "evil content")
+      outside_target = "#{@tmp_dir}/outside/evil_target"
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "evil" => outside_target
+        })
+
+      output = capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      assert output =~ "outside the home directory"
+      refute File.exists?(outside_target)
+    end
+
+    test "rejects a mapped source that escapes the source directory via .." do
+      File.write!("#{@tmp_dir}/outside_source.txt", "outside content")
+
+      config =
+        put_in(Dotfiler.Config.load(), [:linking, :mappings], %{
+          "../outside_source.txt" => "~/mapped_evil"
+        })
+
+      output = capture_io(fn -> Link.from_source(@source_dir, config: config) end)
+
+      assert output =~ "escapes the source directory"
+      refute File.exists?("#{@home_dir}/mapped_evil")
     end
 
     test "warns when multiple mappings share a target" do
