@@ -20,7 +20,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Install dependencies
       run: |
@@ -41,7 +41,7 @@ jobs:
       run: mix test
 
     - name: Cache PLT files
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           _build/*/dialyxir_*
